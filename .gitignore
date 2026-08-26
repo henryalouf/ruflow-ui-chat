@@ -1,0 +1,14 @@
+node_modules/
+
+# Runtime state — never commit
+.env
+*.db
+HEARTBEAT.md
+
+# User data
+sessions/*
+!sessions/.gitkeep
+uploads/*
+!uploads/.gitkeep
+memory/*
+!memory/.gitkeep
