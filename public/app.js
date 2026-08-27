@@ -250,10 +250,36 @@
     ws.onmessage = handleMessage;
   }
 
+  /*
+   * Returns whether the message actually went out.
+   *
+   * This used to silently no-op when the socket was not OPEN — no throw, no
+   * return value — and callers rendered optimistically on the assumption it
+   * had. A dead-but-not-yet-closed socket (wifi handoff, elevator, flaky
+   * cellular) therefore produced a fully normal user bubble for a message the
+   * server never received, with the status dot still showing green because
+   * onclose had not fired. A whole turn, lost, invisibly.
+   */
   function wsSend(obj) {
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify(obj));
+      try {
+        state.ws.send(JSON.stringify(obj));
+        return true;
+      } catch (e) {
+        // send() can throw on a socket that is closing underneath us.
+        console.warn('[ws] send failed:', e && e.message);
+      }
     }
+    /*
+     * We only learn the link is gone by trying to use it, so correct the status
+     * indicator here rather than waiting for an onclose that may be minutes
+     * away, and start reconnecting.
+     */
+    updateConnectionStatus(false);
+    if (state.ws && state.ws.readyState !== WebSocket.CONNECTING) {
+      try { state.ws.close(); } catch (_) {}
+    }
+    return false;
   }
 
   function updateConnectionStatus(connected) {
@@ -795,9 +821,10 @@
     return el;
   }
 
+  /** Returns the rendered element so a caller can mark it undelivered. */
   function appendUserMessage(text, images, files) {
     var chatMessages = document.getElementById('chat-messages');
-    if (!chatMessages) return;
+    if (!chatMessages) return null;
     hideWelcomeScreen();
     var el = document.createElement('div');
     el.className = 'message user';
@@ -823,6 +850,25 @@
     addMessageActions(el, 'user');
     animateMessageEntrance(el);
     autoScroll(true);
+    return el;
+  }
+
+  /**
+   * Mark a rendered user message as never delivered.
+   *
+   * Without this the bubble is indistinguishable from a delivered one — which
+   * is precisely how a turn got lost in silence.
+   */
+  function markMessageUndelivered(el) {
+    if (!el) return;
+    el.classList.add('message-undelivered');
+    var content = el.querySelector('.message-content');
+    if (!content || content.querySelector('.message-undelivered-note')) return;
+    var note = document.createElement('div');
+    note.className = 'message-undelivered-note';
+    note.setAttribute('role', 'alert');
+    note.textContent = 'Not sent — you were disconnected. Your text is back in the box below; send it again once reconnected.';
+    content.appendChild(note);
   }
 
   function appendErrorMessage(message) {
@@ -1481,7 +1527,7 @@
     if (!text && images.length === 0 && files.length === 0) return;
 
     state.lastUserMessage = text;
-    appendUserMessage(text, images, files);
+    var userEl = appendUserMessage(text, images, files);
 
     // Feature #12: Prepend system prompt if set
     var sysPrompt = getSystemPrompt();
@@ -1489,12 +1535,27 @@
 
     var modelSelect = document.getElementById('model-selector');
     var model = modelSelect ? modelSelect.value : 'sonnet';
-    wsSend({
+    var delivered = wsSend({
       type: 'chat', message: fullMessage, sessionId: state.currentSessionId || null,
       model: model,
       images: images.length > 0 ? images : undefined,
       files: files.length > 0 ? files : undefined
     });
+
+    if (!delivered) {
+      /*
+       * The bubble is already on screen and the server never got the message.
+       * Say so on the bubble itself, and put the text back in the composer so
+       * the user still has what they wrote — losing it is the real damage.
+       */
+      markMessageUndelivered(userEl);
+      textarea.value = text;
+      autoResizeTextarea();
+      updateTokenCounter();
+      showReconnectBanner('disconnected', 0);
+      return;
+    }
+
     textarea.value = '';
     autoResizeTextarea();
     updateTokenCounter();

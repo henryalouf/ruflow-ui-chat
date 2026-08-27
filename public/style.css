@@ -2337,3 +2337,27 @@ mark.search-highlight.current{background:#ff6b35;outline:2px solid #ff6b35;}
 .message.msg-enter{opacity:0;transform:translateY(12px);}
 .message.msg-enter-active{opacity:1;transform:translateY(0);transition:opacity .25s ease,transform .25s ease;}
 .share-btn{background:none;border:none;color:var(--text-primary,#cdd6f4);cursor:pointer;padding:4px;}
+
+/* ---------------------------------------------------------------------------
+ * A message that never reached the server
+ *
+ * The send path used to render a normal bubble whether or not the socket was
+ * alive, so a dropped turn looked exactly like a delivered one. These styles
+ * make the difference visible rather than leaving it to be discovered later.
+ * ------------------------------------------------------------------------- */
+.message.message-undelivered .message-content {
+  border: 1px solid var(--error-red);
+  border-radius: 8px;
+}
+.message-undelivered-note {
+  margin-top: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 6px;
+  /* The user bubble is solid blue, where the usual error red reads at 1.6:1.
+     An opaque dark-red inset with near-white text is legible on any bubble. */
+  color: #FFE4E1;
+  background: #7F1D1D;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
