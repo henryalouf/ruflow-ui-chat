@@ -21,7 +21,13 @@ const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_MESSAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024; // 10 MB
-const DOC_MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+/*
+ * Raised from 5MB for data imports. A claude.ai conversations.json carrying
+ * full message bodies for a few hundred chats runs well past the old cap, and
+ * the failure surfaced as a bare rejected upload with no usable reason.
+ * Images stay at 10MB; this only widens text/data documents.
+ */
+const DOC_MAX_SIZE = 50 * 1024 * 1024; // 50 MB
 const CANCEL_KILL_TIMEOUT = 5000; // ms before SIGKILL after SIGTERM
 const HEARTBEAT_FILE = path.join(__dirname, 'HEARTBEAT.md');
 const MEMORY_DIR = path.join(__dirname, 'memory');
@@ -555,7 +561,9 @@ app.use(express.static(PUBLIC_DIR));
 
 const upload = multer({
   dest: UPLOADS_DIR,
-  limits: { fileSize: IMAGE_MAX_SIZE },
+  // Must be the larger of the two caps — multer rejects before handleUpload
+  // runs, so a low value here silently overrides DOC_MAX_SIZE.
+  limits: { fileSize: Math.max(IMAGE_MAX_SIZE, DOC_MAX_SIZE) },
 });
 
 function handleUpload(req, res) {
