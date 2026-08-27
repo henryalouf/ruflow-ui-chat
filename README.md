@@ -10,6 +10,14 @@ subscription, the token, and the security model.
 
 ## What it does
 
+- **Projects.** A project holds custom instructions, knowledge files and its own
+  chats, the way Claude.ai Projects does. Its instructions are injected into
+  every turn in that project. A side panel shows the connected "second brain" —
+  vector memory, a force-directed view of the knowledge graph, and curated
+  notes. See [GUIDE.md](GUIDE.md).
+- **claude.ai import.** Bring your own projects, instructions and full chat
+  history across, from either the official data export or a live session
+  cookie: `node scripts/import-claude.js --export <zip> --dry-run`.
 - **Streaming turn rendering.** Stream events from the CLI are parsed in
   `lib/stream-events.js` into a structured run model (`public/run-model.js`),
   which the renderer (`public/run-render.js`) draws incrementally as the turn
@@ -118,6 +126,10 @@ public/app.js          Client bootstrap and transport
 public/run-model.js    Stream events -> structured run model
 public/run-render.js   Run model -> DOM
 public/style.css       Styles
+lib/projects.js        Project storage: instructions, knowledge, chat ownership
+lib/project-context.js Second brain: vector memory + knowledge graph + notes
+lib/claude-import.js   claude.ai export / API importer
+public/projects.js     Projects UI, incl. the canvas graph view
 tests/                 Node test-runner suites
 GUIDE.md               Setup, subscription, and security guide
 SPEC-v2.md             Design spec for the v2 turn renderer
