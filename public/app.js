@@ -164,6 +164,21 @@
       onCloseView: function () { showChatArea(); },
     });
     window.RuflowProjects.renderSidebarSection(document.getElementById('projects-section'));
+
+    /*
+     * "Add this chat to a project". The menu itself lives in projects.js; this is
+     * only its trigger, because that module cannot reach into this file. Disabled
+     * until a session actually exists — attaching nothing is a no-op that would
+     * silently do nothing and read as broken.
+     */
+    var attachBtn = document.getElementById('attach-project-btn');
+    if (attachBtn) {
+      attachBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (!state.currentSessionId) return;
+        window.RuflowProjects.openAttachMenu(attachBtn, state.currentSessionId);
+      });
+    }
   }
 
   function hideChatArea() {

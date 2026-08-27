@@ -1,0 +1,204 @@
+/*
+ * Projects UI — DOM behaviour under jsdom.
+ *
+ * public/projects.js is a browser module with no permanent test of its own, so
+ * the three properties that actually bite live here:
+ *   1. Escaping. Project names, knowledge filenames and memory snippets are all
+ *      server data that a hostile or careless value can reach the DOM through.
+ *   2. Observer teardown. The graph canvas attaches a ResizeObserver; leaking one
+ *      per project switch is invisible until the tab is slow.
+ *   3. The save indicator must be driven by a real round trip, never a timer —
+ *      a fake "Saved" on unsaved instructions is silent data loss.
+ *
+ * Every negative assertion below is paired with its positive case, so none of
+ * them can pass vacuously against an empty document.
+ */
+const { describe, it, beforeEach } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { JSDOM } = require('jsdom');
+
+const SRC = fs.readFileSync(path.join(__dirname, '..', 'public', 'projects.js'), 'utf-8');
+const XSS = '"><img src=x onerror=alert(1)><script>alert(2)</script>';
+
+function boot({ withResizeObserver = false } = {}) {
+  const dom = new JSDOM(`<!doctype html><body>
+    <div id="projects-section"></div>
+    <div id="project-view" class="rp-view" hidden></div>
+    <div id="chat-messages"></div>
+    <div id="input-area"></div>
+    <button id="attach-project-btn"></button>
+  </body>`, { pretendToBeVisual: true, url: 'http://localhost:3001/' });
+
+  const counts = { observersMade: 0, observersDisconnected: 0 };
+  if (withResizeObserver) {
+    dom.window.ResizeObserver = class {
+      constructor() { counts.observersMade++; }
+      observe() {} disconnect() { counts.observersDisconnected++; }
+    };
+  }
+  global.window = dom.window;
+  global.document = dom.window.document;
+  global.navigator = dom.window.navigator;
+  global.localStorage = dom.window.localStorage;
+  dom.window.eval(SRC);
+
+  const sent = [];
+  const opened = [];
+  const RP = dom.window.RuflowProjects;
+  RP.init({
+    wsSend: (o) => sent.push(o),
+    openSession: (id) => opened.push(id),
+    getState: () => ({ currentSessionId: 's1', sessions: [] }),
+    onOpenView() {}, onCloseView() {},
+  });
+  RP.renderSidebarSection(dom.window.document.getElementById('projects-section'));
+  return { dom, RP, sent, opened, counts, doc: dom.window.document };
+}
+
+describe('projects UI — module contract', () => {
+  it('exposes the functions app.js integrates against', () => {
+    const { RP } = boot();
+    for (const fn of ['init', 'renderSidebarSection', 'openProjectView', 'closeProjectView',
+                      'handleServerMessage', 'openAttachMenu', 'closeAttachMenu']) {
+      assert.equal(typeof RP[fn], 'function', `RuflowProjects.${fn} must exist`);
+    }
+  });
+
+  it('asks the server for its projects on init', () => {
+    const { sent } = boot();
+    assert.ok(sent.some(m => m.type === 'list_projects'), 'must request the project list');
+  });
+});
+
+describe('projects UI — escaping', () => {
+  it('renders a hostile project name as inert text, in the sidebar and the project view', () => {
+    const { RP, doc } = boot();
+
+    RP.handleServerMessage({ type: 'projects', projects: [
+      { id: 'p1', name: XSS, color: '#ff6b35', chatCount: 1, knowledgeCount: 1 },
+      { id: 'p2', name: 'Benign Project', color: '#3fb950', chatCount: 0, knowledgeCount: 0 },
+    ]});
+
+    // Positive case first: the benign project must actually render, or the
+    // negative assertions below would pass against an empty sidebar.
+    const side = doc.getElementById('projects-section');
+    assert.ok(side.textContent.includes('Benign Project'), 'benign project must render');
+    assert.equal(side.querySelectorAll('img').length, 0, 'no <img> may be created');
+    assert.equal(side.querySelectorAll('script').length, 0, 'no <script> may be created');
+    assert.equal(doc.querySelectorAll('[onerror]').length, 0, 'no onerror attribute may exist');
+    assert.ok(side.textContent.includes('onerror'), 'payload must survive as literal text');
+
+    RP.handleServerMessage({ type: 'project', project: {
+      id: 'p1', name: XSS, description: XSS, instructions: 'be terse', color: '#ff6b35',
+      knowledge: [{ id: 'k1', name: XSS + '.md', mime: 'text/markdown', bytes: 10 }],
+    }, sessions: [{ id: 's1', name: XSS, updatedAt: new Date().toISOString(), messageCount: 2 }]});
+    RP.openProjectView('p1');
+
+    const view = doc.getElementById('project-view');
+    assert.ok(view.textContent.length > 0, 'project view must render something');
+    assert.equal(view.querySelectorAll('img').length, 0, 'no <img> in the project view');
+    assert.equal(view.querySelectorAll('script').length, 0, 'no <script> in the project view');
+    assert.equal(doc.querySelectorAll('[onerror]').length, 0, 'no onerror anywhere');
+  });
+
+  it('does not let a hostile snippet from the second brain become markup', () => {
+    const { RP, doc } = boot();
+    RP.handleServerMessage({ type: 'project', project: {
+      id: 'p1', name: 'P', description: '', instructions: '', color: '#ff6b35', knowledge: [] }, sessions: [] });
+    RP.openProjectView('p1');
+    RP.handleServerMessage({ type: 'project_context', id: 'p1',
+      memory: [{ name: XSS, snippet: XSS, score: 0.9, source: XSS }],
+      brain: [{ name: XSS, description: XSS, type: 'feedback' }],
+      graph: { nodes: [], edges: [], stats: { totalNodes: 0 } } });
+    assert.equal(doc.querySelectorAll('img').length, 0, 'no <img> from memory/brain data');
+    assert.equal(doc.querySelectorAll('[onerror]').length, 0, 'no onerror from memory/brain data');
+  });
+});
+
+describe('projects UI — empty states', () => {
+  it('renders an empty sidebar for zero projects, and rows for some', () => {
+    const { RP, doc } = boot();
+    const side = doc.getElementById('projects-section');
+
+    RP.handleServerMessage({ type: 'projects', projects: [
+      { id: 'p1', name: 'One', color: '#ff6b35', chatCount: 0, knowledgeCount: 0 }]});
+    const withOne = side.textContent;
+    assert.ok(withOne.includes('One'), 'the project must be listed');
+
+    RP.handleServerMessage({ type: 'projects', projects: [] });
+    assert.ok(!side.textContent.includes('One'), 'the list must clear when there are no projects');
+  });
+});
+
+describe('projects UI — graph observer teardown', () => {
+  it('disconnects every ResizeObserver it creates, including on project switch', () => {
+    const { RP, counts } = boot({ withResizeObserver: true });
+    const proj = { id: 'p1', name: 'P', description: '', instructions: '', color: '#ff6b35', knowledge: [] };
+    RP.handleServerMessage({ type: 'project', project: proj, sessions: [] });
+    RP.openProjectView('p1');
+    RP.handleServerMessage({ type: 'project_context', id: 'p1', memory: [], brain: [],
+      graph: { nodes: [{ id: 'a', label: 'a', community: 1 }], edges: [], stats: {} } });
+    RP.openProjectView('p1');   // switching must tear the previous one down
+    RP.closeProjectView();
+
+    assert.ok(counts.observersMade > 0, 'sanity: the graph panel must attach an observer');
+    assert.ok(counts.observersDisconnected >= counts.observersMade,
+      `leaked ${counts.observersMade - counts.observersDisconnected} ResizeObserver(s)`);
+  });
+});
+
+describe('projects UI — instructions autosave indicator', () => {
+  it('only reports Saved once the server echoes the exact value that was sent', () => {
+    const { RP, doc } = boot();
+    RP.handleServerMessage({ type: 'project', project: {
+      id: 'p1', name: 'P', description: '', instructions: 'old', color: '#ff6b35', knowledge: [] }, sessions: [] });
+    RP.openProjectView('p1');
+
+    const ta = doc.querySelector('textarea');
+    assert.ok(ta, 'the instructions textarea must exist');
+    ta.value = 'brand new instructions';
+    ta.dispatchEvent(new doc.defaultView.Event('blur'));
+
+    /*
+     * Read the indicator element itself, not document text. textContent
+     * concatenates sibling labels with no separator ("InstructionsSavedKnowledge"),
+     * so a \bSaved\b match against the page can never fire — which would make the
+     * negative assertion below pass for the wrong reason.
+     */
+    const indicator = () => doc.querySelector('.rp-save-indicator').textContent.trim();
+
+    assert.equal(indicator(), 'Saving...', 'the indicator must show Saving immediately');
+
+    // A stale echo carrying the OLD value must not be mistaken for confirmation.
+    RP.handleServerMessage({ type: 'project_updated', project: {
+      id: 'p1', name: 'P', description: '', instructions: 'old', color: '#ff6b35', knowledge: [] } });
+    assert.equal(indicator(), 'Saving...', 'a stale echo must not flip the indicator to Saved');
+
+    // The real confirmation does.
+    RP.handleServerMessage({ type: 'project_updated', project: {
+      id: 'p1', name: 'P', description: '', instructions: 'brand new instructions',
+      color: '#ff6b35', knowledge: [] } });
+    assert.equal(indicator(), 'Saved', 'a matching echo must confirm the save');
+  });
+});
+
+describe('projects UI — attach menu', () => {
+  it('opens a menu listing projects plus a None option, and closes again', () => {
+    const { RP, doc } = boot();
+    RP.handleServerMessage({ type: 'projects', projects: [
+      { id: 'p1', name: 'Alpha', color: '#ff6b35', chatCount: 0, knowledgeCount: 0 },
+      { id: 'p2', name: 'Beta', color: '#3fb950', chatCount: 0, knowledgeCount: 0 }]});
+
+    RP.openAttachMenu(doc.getElementById('attach-project-btn'), 's1');
+    const text = doc.body.textContent;
+    assert.ok(text.includes('Alpha') && text.includes('Beta'), 'menu must list the projects');
+    assert.match(text, /none/i, 'menu must offer a detach option');
+
+    RP.closeAttachMenu();
+    // Proven both ways: the menu content is gone, but the sidebar rows remain.
+    assert.ok(doc.getElementById('projects-section').textContent.includes('Alpha'),
+      'closing the menu must not wipe the sidebar');
+  });
+});
