@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const { createEmitStream, createStreamEventProcessor } = require('./lib/stream-events');
 const { createProjectStore } = require('./lib/projects');
 const { createContextEngine } = require('./lib/project-context');
+const { buildHistoryPrompt } = require('./lib/conversation-history');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -1552,6 +1553,18 @@ wss.on('connection', (ws) => {
       args.push('--resume', session.cliSessionId);
     }
 
+    /*
+     * No CLI session but stored messages: the model would otherwise be spawned
+     * with none of this chat's history while the UI still displays all of it.
+     * Happens for every imported chat, and after an edit/regenerate branch.
+     * Replay the transcript so "what were we working on" answers from THIS
+     * conversation instead of from nothing.
+     */
+    let historyPrompt = null;
+    if (!session.cliSessionId && (session.messages || []).length > 0) {
+      historyPrompt = buildHistoryPrompt(session.messages, { budget: 24000 });
+    }
+
     // Add system prompt with professional standards and skill routing
     const systemParts = [];
     systemParts.push(`You are Ruflow — a professional AI assistant with 1,340+ skills. You run on a VPS (Ubuntu Linux) as user claude-user. Working directory: ${WORK_DIR}
@@ -1609,6 +1622,8 @@ GRAPHIFY (use ONLY for code/architecture tasks — not for general chat):
         console.warn('[projects] context injection failed:', e.message);
       }
     }
+
+    if (historyPrompt) systemParts.push(historyPrompt);
 
     // Smart skill auto-loading: detect task type and inject relevant skill content
     const detectedRoutes = detectSkillsForMessage(prompt);
