@@ -137,6 +137,49 @@
   // ---------------------------------------------------------------------------
   // WebSocket with improved reconnect (#8)
   // ---------------------------------------------------------------------------
+  /*
+   * Projects module wiring. Everything it needs is injected, so it never reaches
+   * into app.js state directly — that keeps this integration to these few lines.
+   */
+  var PROJECT_MSG_TYPES = {
+    projects: 1, project: 1, project_created: 1, project_updated: 1,
+    project_deleted: 1, project_context: 1, session_assigned: 1,
+  };
+  var projectsBooted = false;
+
+  function initProjects() {
+    if (projectsBooted || !window.RuflowProjects) return;
+    projectsBooted = true;
+    window.RuflowProjects.init({
+      wsSend: wsSend,
+      openSession: function (id) {
+        window.RuflowProjects.closeProjectView();
+        showChatArea();
+        wsSend({ type: 'load_session', sessionId: id });
+      },
+      getState: function () {
+        return { currentSessionId: state.currentSessionId, sessions: state.sessions };
+      },
+      onOpenView: function () { hideChatArea(); },
+      onCloseView: function () { showChatArea(); },
+    });
+    window.RuflowProjects.renderSidebarSection(document.getElementById('projects-section'));
+  }
+
+  function hideChatArea() {
+    var cm = document.getElementById('chat-messages');
+    var ia = document.getElementById('input-area');
+    if (cm) cm.hidden = true;
+    if (ia) ia.hidden = true;
+  }
+
+  function showChatArea() {
+    var cm = document.getElementById('chat-messages');
+    var ia = document.getElementById('input-area');
+    if (cm) cm.hidden = false;
+    if (ia) ia.hidden = false;
+  }
+
   function connectWebSocket() {
     var WS_URL = 'ws://' + window.location.host;
     var ws = new WebSocket(WS_URL);
@@ -147,6 +190,8 @@
       showReconnectBanner('connected');
       updateConnectionStatus(true);
       ws.send(JSON.stringify({ type: 'list_sessions' }));
+      ws.send(JSON.stringify({ type: 'list_projects' }));
+      initProjects();
     };
 
     ws.onclose = function () {
@@ -220,6 +265,15 @@
   function handleMessage(event) {
     var data;
     try { data = JSON.parse(event.data); } catch (e) { return; }
+
+    /*
+     * Projects own their own message types. Routed before the main switch so the
+     * module stays self-contained — app.js never has to know its internals.
+     */
+    if (window.RuflowProjects && PROJECT_MSG_TYPES[data.type]) {
+      window.RuflowProjects.handleServerMessage(data);
+      if (data.type !== 'session_assigned') return;
+    }
 
     switch (data.type) {
       case 'session_list':

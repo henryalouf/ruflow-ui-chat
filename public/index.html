@@ -8,6 +8,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
   <title>Ruflow Chat</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="projects.css">
   <!--
     Vendored + pinned (U7-MARKDOWN, SPEC-v2.md). Was an unpinned CDN load that
     silently drifted past marked v5, which removed the `highlight` option
@@ -51,6 +52,10 @@
           <option value="messages">Most messages</option>
           <option value="oldest">Oldest first</option>
         </select>
+      </div>
+
+      <div id="projects-section" class="rp-sidebar-section">
+        <!-- Projects are rendered by projects.js -->
       </div>
 
       <div id="session-list" class="session-list">
@@ -152,6 +157,8 @@
       <div id="tool-breadcrumb" class="tool-breadcrumb"></div>
 
       <!-- Chat Messages Area -->
+      <div id="project-view" class="rp-view" hidden></div>
+
       <div id="chat-messages">
         <div id="chat-search-bar" class="chat-search-bar">
           <input id="chat-search-input" type="text" placeholder="Search in chat..." />
@@ -337,6 +344,7 @@
   <!-- Hidden file input for attachments -->
   <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md,.json,.csv,.js,.ts,.py,.html,.css" style="display: none;" aria-hidden="true">
 
+  <script src="projects.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

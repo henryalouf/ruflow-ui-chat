@@ -7,6 +7,8 @@ const fs = require('fs');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { createEmitStream, createStreamEventProcessor } = require('./lib/stream-events');
+const { createProjectStore } = require('./lib/projects');
+const { createContextEngine } = require('./lib/project-context');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -24,6 +26,9 @@ const CANCEL_KILL_TIMEOUT = 5000; // ms before SIGKILL after SIGTERM
 const HEARTBEAT_FILE = path.join(__dirname, 'HEARTBEAT.md');
 const MEMORY_DIR = path.join(__dirname, 'memory');
 const MEMORY_FILE = path.join(MEMORY_DIR, 'store.json');
+// Overridable so the e2e suite can exercise the real server without writing
+// into the operator's live projects directory.
+const PROJECTS_DIR = process.env.RUFLOW_PROJECTS_DIR || path.join(__dirname, 'projects');
 
 /*
  * U6-SUBAGENT flags — both one-line revertible, per spec.
@@ -622,6 +627,66 @@ app.post('/upload', uploadMiddleware, handleUpload);
 app.post('/api/upload', uploadMiddleware, handleUpload);
 
 // ---------------------------------------------------------------------------
+// Project knowledge files
+//
+// Kept on HTTP rather than the WebSocket because these are multipart bodies and
+// can be megabytes — pushing them through the socket would block the stream that
+// every live turn depends on.
+// ---------------------------------------------------------------------------
+
+const knowledgeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+app.post('/api/projects/:id/knowledge', (req, res) => {
+  knowledgeUpload.single('file')(req, res, (err) => {
+    if (err) {
+      // multer's own limit error is the 10MB cap; report it as such rather than a 500.
+      const tooBig = err.code === 'LIMIT_FILE_SIZE';
+      return res.status(tooBig ? 413 : 400).json({ error: tooBig ? 'File exceeds the 10MB limit' : err.message });
+    }
+    if (!req.file) return res.status(400).json({ error: 'No file provided' });
+    try {
+      const entry = projectStore.addKnowledge(req.params.id, {
+        name: path.basename(req.file.originalname || 'file'),
+        mime: req.file.mimetype || 'application/octet-stream',
+        buffer: req.file.buffer,
+      });
+      if (!entry) return res.status(404).json({ error: 'Project not found' });
+      res.json({ ok: true, file: entry });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+});
+
+app.delete('/api/projects/:id/knowledge/:fileId', (req, res) => {
+  try {
+    const ok = projectStore.removeKnowledge(req.params.id, req.params.fileId);
+    if (!ok) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get('/api/projects/:id/knowledge/:fileId', (req, res) => {
+  try {
+    const buf = projectStore.readKnowledge(req.params.id, req.params.fileId);
+    if (!buf) return res.status(404).json({ error: 'Not found' });
+    const proj = projectStore.getProject(req.params.id);
+    const meta = (proj && proj.knowledge || []).find(k => k.id === req.params.fileId);
+    res.type((meta && meta.mime) || 'application/octet-stream');
+    // Never let a stored filename drive an inline render.
+    res.setHeader('Content-Disposition', 'attachment');
+    res.send(buf);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Health check endpoint
 // ---------------------------------------------------------------------------
 
@@ -731,6 +796,15 @@ function searchBlocksForTool(blockList, toolId) {
 const TRASH_DIR = path.join(__dirname, 'sessions', '.trash');
 fs.mkdirSync(TRASH_DIR, { recursive: true });
 
+/* Projects: instructions + knowledge + the second-brain context feed. */
+const projectStore = createProjectStore({ projectsDir: PROJECTS_DIR, sessionsDir: SESSIONS_DIR });
+const contextEngine = createContextEngine({
+  repoRoot: WORK_DIR,
+  graphPath: path.join(WORK_DIR, 'graphify-out', 'graph.json'),
+  agentdbSearchScript: path.join(WORK_DIR, 'scripts', 'memory-db', 'search.js'),
+  brainMemoryDir: path.join(WORK_DIR, '.brain-memory'),
+});
+
 function deleteSessionFile(id) {
   // Don't actually delete — mark as archived
   const session = loadSession(id);
@@ -813,6 +887,7 @@ function listSessions() {
         group: getDateGroup(data.updatedAt),
         pinned: !!data.pinned,
         archived: !!data.archived,
+        projectId: data.projectId || null,
       });
     } catch (_) {
       // skip corrupt files
@@ -1015,6 +1090,27 @@ wss.on('connection', (ws) => {
         }
         return;
 
+      case 'list_projects':
+        return send({ type: 'projects', projects: projectStore.listProjects({ includeArchived: !!msg.includeArchived }) });
+
+      case 'get_project':
+        return handleGetProject(msg);
+
+      case 'create_project':
+        return handleCreateProject(msg);
+
+      case 'update_project':
+        return handleUpdateProject(msg);
+
+      case 'delete_project':
+        return handleDeleteProject(msg);
+
+      case 'assign_session':
+        return handleAssignSession(msg);
+
+      case 'project_context':
+        return handleProjectContext(msg);
+
       case 'unarchive_session':
         return handleUnarchiveSession(msg);
 
@@ -1089,6 +1185,75 @@ wss.on('connection', (ws) => {
       return send({ type: 'error', message: 'Session not found' });
     }
     send({ type: 'session_loaded', session });
+  }
+
+  // -------------------------------------------------------------------------
+  // Projects
+  // -------------------------------------------------------------------------
+
+  function sendProjectList() {
+    const projects = projectStore.listProjects({});
+    send({ type: 'projects', projects });
+    broadcast({ type: 'projects', projects }, ws);
+  }
+
+  function handleGetProject(msg) {
+    const project = projectStore.getProject(msg.id);
+    if (!project) return send({ type: 'error', message: 'Project not found' });
+    send({ type: 'project', project, sessions: projectStore.listProjectSessions(msg.id) });
+  }
+
+  function handleCreateProject(msg) {
+    const name = String(msg.name || '').trim();
+    if (!name) return send({ type: 'error', message: 'Project name is required' });
+    const project = projectStore.createProject({
+      name,
+      description: msg.description || '',
+      instructions: msg.instructions || '',
+      color: msg.color,
+    });
+    send({ type: 'project_created', project });
+    sendProjectList();
+  }
+
+  function handleUpdateProject(msg) {
+    const project = projectStore.updateProject(msg.id, msg.patch || {});
+    if (!project) return send({ type: 'error', message: 'Project not found' });
+    // The ack the UI's save indicator waits on. Only sent after the write lands.
+    send({ type: 'project_updated', project });
+    sendProjectList();
+  }
+
+  function handleDeleteProject(msg) {
+    const ok = projectStore.deleteProject(msg.id, { hard: !!msg.hard });
+    if (!ok) return send({ type: 'error', message: 'Project not found' });
+    send({ type: 'project_deleted', id: msg.id });
+    sendProjectList();
+    broadcastSessionUpdate();
+  }
+
+  function handleAssignSession(msg) {
+    const ok = projectStore.assignSession(msg.sessionId, msg.projectId || null);
+    if (!ok) return send({ type: 'error', message: 'Session not found' });
+    send({ type: 'session_assigned', sessionId: msg.sessionId, projectId: msg.projectId || null });
+    sendProjectList();
+    broadcastSessionUpdate();
+  }
+
+  function handleProjectContext(msg) {
+    const project = projectStore.getProject(msg.id);
+    if (!project) return send({ type: 'error', message: 'Project not found' });
+    /*
+     * Graph extraction touches a 52MB file behind a cache. Never let a slow or
+     * broken context read take the socket down — the panel degrades to empty.
+     */
+    try {
+      const ctx = contextEngine.projectContext(project, { recentText: msg.query || '' });
+      send({ type: 'project_context', id: msg.id, memory: ctx.memory, graph: ctx.graph, brain: ctx.brain });
+    } catch (e) {
+      console.warn('[projects] context failed:', e.message);
+      send({ type: 'project_context', id: msg.id, memory: [], graph: { nodes: [], edges: [], stats: {} }, brain: [], error: e.message });
+    }
   }
 
   function handleDeleteSession(msg) {
@@ -1413,6 +1578,27 @@ GRAPHIFY (use ONLY for code/architecture tasks — not for general chat):
 
     if (session.systemPrompt) {
       systemParts.push(session.systemPrompt);
+    }
+
+    /*
+     * Project instructions + knowledge, and the second-brain slice. Same channel the
+     * per-session prompt uses, so a project behaves exactly like Claude.ai Projects:
+     * every turn in the project inherits its instructions. Wrapped in try/catch
+     * because a broken project file must degrade to a normal chat, never kill a turn.
+     */
+    if (session.projectId) {
+      try {
+        const projectPrompt = projectStore.buildProjectPrompt(session.projectId);
+        if (projectPrompt) systemParts.push(projectPrompt);
+        const proj = projectStore.getProject(session.projectId);
+        if (proj) {
+          const ctx = contextEngine.projectContext(proj, { recentText: prompt });
+          const ctxText = contextEngine.formatForPrompt(ctx);
+          if (ctxText) systemParts.push(ctxText);
+        }
+      } catch (e) {
+        console.warn('[projects] context injection failed:', e.message);
+      }
     }
 
     // Smart skill auto-loading: detect task type and inject relevant skill content

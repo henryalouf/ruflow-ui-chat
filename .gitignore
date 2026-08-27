@@ -12,3 +12,8 @@ uploads/*
 !uploads/.gitkeep
 memory/*
 !memory/.gitkeep
+
+# Projects (instructions + knowledge) — runtime state
+projects/*
+!projects/.gitkeep
+.cache/
