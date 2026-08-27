@@ -130,10 +130,17 @@
       box = document.createElement('div');
       box.id = 'rp-toasts';
       box.className = 'rp-toasts';
+      // Without a live region a screen reader user gets no signal at all that
+      // an upload was rejected or a save failed — the toast is purely visual.
+      box.setAttribute('role', 'status');
+      box.setAttribute('aria-live', 'polite');
+      box.setAttribute('aria-atomic', 'false');
       document.body.appendChild(box);
     }
     var el = document.createElement('div');
     el.className = 'rp-toast rp-toast-' + (type || 'info');
+    // An error should interrupt rather than queue behind other announcements.
+    if (type === 'error') el.setAttribute('role', 'alert');
     el.textContent = message;
     box.appendChild(el);
     setTimeout(function () {
@@ -181,15 +188,48 @@
         '</div>';
       document.body.appendChild(overlay);
       overlay.addEventListener('click', function (e) {
-        if (e.target === overlay) overlay.classList.remove('rp-open');
+        if (e.target !== overlay) return;
+        overlay.classList.remove('rp-open');
+        if (overlay._rpKeydown) document.removeEventListener('keydown', overlay._rpKeydown, true);
+        if (overlay._rpOpener && document.contains(overlay._rpOpener)) overlay._rpOpener.focus();
       });
       overlay.querySelector('#rp-view-close').addEventListener('click', function () {
         overlay.classList.remove('rp-open');
+        if (overlay._rpKeydown) document.removeEventListener('keydown', overlay._rpKeydown, true);
+        if (overlay._rpOpener && document.contains(overlay._rpOpener)) overlay._rpOpener.focus();
       });
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') overlay.classList.remove('rp-open');
       });
     }
+    /*
+     * Same guarantees confirmDialog got: this one advertised aria-modal="true"
+     * while Tab walked straight out into the page behind it and Escape left
+     * focus wherever it had wandered. Trap it, and put focus back.
+     */
+    var viewOpener = document.activeElement;
+    overlay._rpOpener = viewOpener;
+    if (overlay._rpKeydown) document.removeEventListener('keydown', overlay._rpKeydown, true);
+    overlay._rpKeydown = function (e) {
+      if (!overlay.classList.contains('rp-open')) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        overlay.classList.remove('rp-open');
+        document.removeEventListener('keydown', overlay._rpKeydown, true);
+        if (viewOpener && typeof viewOpener.focus === 'function' && document.contains(viewOpener)) viewOpener.focus();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      var focusables = [overlay.querySelector('#rp-view-close'), overlay.querySelector('#rp-view-body')].filter(Boolean);
+      if (!focusables.length) return;
+      var idx = focusables.indexOf(document.activeElement);
+      e.preventDefault();
+      focusables[e.shiftKey
+        ? (idx <= 0 ? focusables.length : idx) - 1
+        : (idx + 1) % focusables.length].focus();
+    };
+    document.addEventListener('keydown', overlay._rpKeydown, true);
+
     overlay.querySelector('#rp-view-title').textContent = fileName || 'File';
     var body = overlay.querySelector('#rp-view-body');
     body.textContent = 'Loading\u2026';
@@ -209,6 +249,7 @@
       })
       .catch(function (err) {
         body.textContent = 'Could not open this file: ' + err.message;
+        body.focus();   // the failure path left focus outside the dialog entirely
       });
   }
 
@@ -550,7 +591,9 @@
   function shellHtml() {
     var swatches = '';
     for (var i = 0; i < PALETTE.length; i++) {
-      swatches += '<button type="button" class="rp-color-swatch" data-color="' + PALETTE[i] + '" style="background:' + PALETTE[i] + '" aria-label="Set project color"></button>';
+      // role="menu" requires menuitem-family children; plain buttons break menu
+      // navigation for screen readers even though they stay Tab-reachable.
+      swatches += '<button type="button" role="menuitemradio" aria-checked="false" class="rp-color-swatch" data-color="' + PALETTE[i] + '" style="background:' + PALETTE[i] + '" aria-label="Set project color to ' + PALETTE[i] + '"></button>';
     }
     return (
       '<div class="rp-scroll">' +
@@ -587,7 +630,7 @@
           '</div>' +
           '<div class="rp-col rp-col-side">' +
             '<div class="rp-section">' +
-              '<div class="rp-section-head"><span class="rp-section-title">Instructions</span><span class="rp-save-indicator"></span></div>' +
+              '<div class="rp-section-head"><span class="rp-section-title">Instructions</span><span class="rp-save-indicator" role="status" aria-live="polite" aria-atomic="true"></span></div>' +
               '<textarea class="rp-instructions" placeholder="Custom instructions injected into every chat in this project..." aria-label="Project instructions"></textarea>' +
             '</div>' +
             '<div class="rp-section">' +

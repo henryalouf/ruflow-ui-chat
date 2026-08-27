@@ -1120,7 +1120,18 @@
       }
       var delBtn = document.createElement('button');
       delBtn.className = 'session-delete-btn';
-      delBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+      /*
+       * This had no accessible name at all: an icon-only DESTRUCTIVE button
+       * announced as just "button", once per session — ~140 of them on a real
+       * sidebar. The sibling restore button already gets its name from `title`,
+       * so the pattern existed here and simply was not applied.
+       */
+      var delLabel = isArchived
+        ? 'Permanently delete "' + (s.name || 'Untitled chat') + '"'
+        : 'Archive "' + (s.name || 'Untitled chat') + '"';
+      delBtn.title = delLabel;
+      delBtn.setAttribute('aria-label', delLabel);
+      delBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
       delBtn.setAttribute('data-session-id', s.id);
       delBtn.setAttribute('data-archived', isArchived ? '1' : '0');
       item.appendChild(delBtn);
