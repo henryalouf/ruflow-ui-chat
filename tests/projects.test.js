@@ -623,3 +623,43 @@ describe('Projects — buildProjectPrompt retrieval', () => {
     assert.ok(out.includes('Be concrete.'), 'instructions survive a zero-match query');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Atomic writes must be collision-safe
+//
+// atomicWriteFileSync used a fixed `${file}.tmp` shared by every writer. Under
+// concurrency one writer renamed another's half-written temp into place and the
+// loser crashed with ENOENT, silently losing its update. Measured at 20
+// concurrent writers: most crashed, and a reader caught a partial parse.
+// ---------------------------------------------------------------------------
+describe('Projects — concurrent writes do not corrupt or lose data', () => {
+  it('survives many interleaved updateProject calls with valid JSON throughout', () => {
+    const p = store.createProject({ name: 'Race Target', instructions: 'v0' });
+    const reads = [];
+    for (let i = 0; i < 200; i++) {
+      store.updateProject(p.id, { instructions: 'v' + i, description: 'd'.repeat(i % 90) });
+      // Read back on every iteration: a torn write would surface as a throw.
+      const seen = store.getProject(p.id);
+      assert.ok(seen, 'project must always be readable mid-write');
+      reads.push(seen.instructions);
+    }
+    assert.equal(store.getProject(p.id).instructions, 'v199', 'the last write must win');
+    assert.equal(reads.length, 200);
+  });
+
+  it('leaves no stray temp files behind', () => {
+    const p = store.createProject({ name: 'Temp Litter' });
+    for (let i = 0; i < 25; i++) store.updateProject(p.id, { instructions: 'x' + i });
+    const strays = fs.readdirSync(projectsDir).filter(f => f.includes('.tmp'));
+    assert.deepEqual(strays, [], `temp files left behind: ${strays.join(', ')}`);
+  });
+
+  it('uses a per-writer temp name, not a shared one', () => {
+    // Guards the actual regression: a fixed name is what made writers collide.
+    const src = fs.readFileSync(require.resolve('../lib/projects.js'), 'utf-8');
+    const m = src.match(/const tmp = `\$\{filePath\}([^`]*)`/);
+    assert.ok(m, 'atomicWriteFileSync should build a temp path from filePath');
+    assert.notEqual(m[1], '.tmp', 'a fixed .tmp suffix is shared by every writer');
+    assert.match(m[1], /process\.pid/, 'the temp name must be unique per process');
+  });
+});

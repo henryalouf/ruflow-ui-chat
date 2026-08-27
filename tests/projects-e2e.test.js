@@ -24,6 +24,7 @@ const ORIGIN = `http://127.0.0.1:${PORT}`;
 const AUTH = { Cookie: `ruflow_token=${TOKEN}` };
 
 let child, tmpProjects, tmpSessions, ws;
+const SEED_SESSION_ID = '00000000-e2e0-4000-8000-000000000001';
 
 /** Send a WS message and wait for the first reply matching `want`. */
 function rpc(send, want, timeoutMs = 8000) {
@@ -45,6 +46,17 @@ function rpc(send, want, timeoutMs = 8000) {
 
 before(async () => {
   tmpProjects = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-e2e-proj-'));
+  /*
+   * Sessions must be isolated too. This suite used to grab "a session the
+   * running server actually has" and reassign it — mutating the operator's real
+   * chat history on every run, because server.js ignored RUFLOW_SESSIONS_DIR.
+   * It honours it now; seed one disposable session instead of borrowing a real one.
+   */
+  tmpSessions = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-e2e-sess-'));
+  fs.writeFileSync(path.join(tmpSessions, `${SEED_SESSION_ID}.json`), JSON.stringify({
+    id: SEED_SESSION_ID, name: 'e2e seed chat', cliSessionId: null, model: 'sonnet',
+    messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  }, null, 2));
   child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
     env: {
       ...process.env,
@@ -52,6 +64,7 @@ before(async () => {
       RUFLOW_TOKEN: TOKEN,
       RUFLOW_OPEN: '',
       RUFLOW_PROJECTS_DIR: tmpProjects,
+      RUFLOW_SESSIONS_DIR: tmpSessions,
     },
     stdio: 'ignore',
   });
@@ -72,6 +85,7 @@ after(() => {
   try { ws && ws.terminate(); } catch (_) {}
   if (child) child.kill('SIGKILL');
   try { fs.rmSync(tmpProjects, { recursive: true, force: true }); } catch (_) {}
+  try { fs.rmSync(tmpSessions, { recursive: true, force: true }); } catch (_) {}
 });
 
 describe('projects over the websocket', () => {
@@ -190,10 +204,11 @@ describe('session <-> project assignment', () => {
     const c = await rpc({ type: 'create_project', name: 'Attach Target' }, 'project_created');
     const projectId = c.project.id;
 
-    // Use a session the running server actually has, so this exercises the real path.
+    // The seeded disposable session — never one of the operator's real chats.
     const list = await rpc({ type: 'list_sessions' }, 'session_list');
-    assert.ok(list.sessions.length > 0, 'need at least one existing session to attach');
-    const sessionId = list.sessions[0].id;
+    assert.ok(list.sessions.some(s => s.id === SEED_SESSION_ID),
+      'the seeded session must be visible, proving RUFLOW_SESSIONS_DIR is honoured');
+    const sessionId = SEED_SESSION_ID;
 
     const a = await rpc({ type: 'assign_session', sessionId, projectId }, 'session_assigned');
     assert.equal(a.projectId, projectId);

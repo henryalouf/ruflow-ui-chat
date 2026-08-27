@@ -17,7 +17,10 @@ const { buildHistoryPrompt } = require('./lib/conversation-history');
 
 const PORT = process.env.PORT || 3001;
 const WORK_DIR = '/home/claude-user/workspace/repos/ruflow/';
-const SESSIONS_DIR = path.join(__dirname, 'sessions');
+// Overridable, matching RUFLOW_PROJECTS_DIR. scripts/import-claude.js already
+// read this var and the e2e suite assumed it worked; it never did, so that
+// suite was mutating the operator's real sessions on every run.
+const SESSIONS_DIR = process.env.RUFLOW_SESSIONS_DIR || path.join(__dirname, 'sessions');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_MESSAGE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -589,7 +592,7 @@ function handleUpload(req, res) {
 
     if (isDoc && req.file.size > DOC_MAX_SIZE) {
       fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Document exceeds 5MB limit' });
+      return res.status(400).json({ error: `Document exceeds the ${Math.round(DOC_MAX_SIZE / (1024 * 1024))}MB limit` });
     }
 
     const storedName = `${uuidv4()}-${safeName}`;
@@ -624,7 +627,7 @@ function uploadMiddleware(req, res, next) {
   upload.single('file')(req, res, (err) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'File exceeds maximum size limit (10MB)' });
+        return res.status(400).json({ error: 'File exceeds the maximum upload size' });
       }
       return res.status(400).json({ error: err.message || 'Upload failed' });
     }
@@ -776,9 +779,25 @@ function loadSession(id) {
   return JSON.parse(fs.readFileSync(p, 'utf-8'));
 }
 
+/*
+ * Every chat turn writes through here, so a torn write costs the user a whole
+ * conversation. A plain writeFileSync truncates the target first: a crash, OOM
+ * or SIGKILL landing mid-write leaves that session permanently unparseable, and
+ * listSessions then drops it from the sidebar with no signal that anything was
+ * lost. Write to a per-writer temp and rename, which is atomic on the same
+ * filesystem, so a reader sees either the old file or the new one.
+ */
 function saveSession(session) {
   session.updatedAt = new Date().toISOString();
-  fs.writeFileSync(sessionPath(session.id), JSON.stringify(session, null, 2));
+  const target = sessionPath(session.id);
+  const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(session, null, 2));
+    fs.renameSync(tmp, target);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    throw err;
+  }
 }
 
 /** Disk-side fallback for fetch_tool_output — walks every message's blocks[]
@@ -802,7 +821,7 @@ function searchBlocksForTool(blockList, toolId) {
   return null;
 }
 
-const TRASH_DIR = path.join(__dirname, 'sessions', '.trash');
+const TRASH_DIR = path.join(SESSIONS_DIR, '.trash');  // follow SESSIONS_DIR, or isolation leaks
 fs.mkdirSync(TRASH_DIR, { recursive: true });
 
 /* Projects: instructions + knowledge + the second-brain context feed. */
@@ -898,8 +917,14 @@ function listSessions() {
         archived: !!data.archived,
         projectId: data.projectId || null,
       });
-    } catch (_) {
-      // skip corrupt files
+    } catch (err) {
+      /*
+       * A file that will not parse is a chat the user can no longer see. It was
+       * dropped silently, so the only symptom was a conversation quietly
+       * missing from the sidebar. Say so — loudly enough to be findable in the
+       * log, without taking the listing down.
+       */
+      console.error(`[sessions] unreadable session file ${file}: ${err.message}`);
     }
   }
   // Sort newest first
