@@ -414,6 +414,10 @@
 }
 
 .rp-desc {
+  /* A description with no spaces rendered as one 50,057px line, clipped by an
+     ancestor with no wrap, ellipsis or scrollbar. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
   display: block;
   margin-top: 6px;
   margin-left: 42px;

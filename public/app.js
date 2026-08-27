@@ -8,6 +8,30 @@
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
+
+  /*
+   * localStorage can THROW, not just return null — Safari private mode, strict
+   * privacy settings, enterprise storage policy. These reads built `state`
+   * unguarded, so one throw aborted the whole script and the sidebar rendered
+   * with no projects and no chats: indistinguishable from "you have none",
+   * which is false and looks exactly like data loss. Preferences are a
+   * convenience; losing them must never cost the app its content.
+   */
+  function lsGet(key, fallback) {
+    try {
+      var v = localStorage.getItem(key);
+      return v === null || v === undefined ? fallback : v;
+    } catch (e) { return fallback; }
+  }
+  function lsJson(key, fallback) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return fallback;
+      var parsed = JSON.parse(raw);
+      return parsed === null || parsed === undefined ? fallback : parsed;
+    } catch (e) { return fallback; }   // corrupt JSON must not be fatal either
+  }
+
   var state = {
     currentSessionId: null,
     sessions: [],
@@ -35,17 +59,17 @@
     slashMenuIndex: 0,
     multiSelectMode: false,
     selectedMessages: new Set(),
-    sessionSortMode: localStorage.getItem('ruflow-session-sort') || 'recent',
+    sessionSortMode: lsGet('ruflow-session-sort', 'recent'),
     commandPaletteOpen: false,
-    systemPrompts: JSON.parse(localStorage.getItem('ruflow-system-prompts') || '{}'),
-    pinnedSessions: JSON.parse(localStorage.getItem('ruflow-pinned-sessions') || '[]'),
-    chatZoom: parseInt(localStorage.getItem('ruflow-chat-zoom') || '100', 10),
+    systemPrompts: lsJson('ruflow-system-prompts', {}),
+    pinnedSessions: lsJson('ruflow-pinned-sessions', []),
+    chatZoom: parseInt(lsGet('ruflow-chat-zoom', '100'), 10) || 100,
     searchOpen: false,
     searchMatches: [],
     searchMatchIndex: -1,
-    verbose: localStorage.getItem('ruflow-verbose') === 'true',
-    thinkingLevel: localStorage.getItem('ruflow-think-level') || 'medium',
-    ttsEnabled: localStorage.getItem('ruflow-tts') !== 'off'
+    verbose: lsGet('ruflow-verbose', '') === 'true',
+    thinkingLevel: lsGet('ruflow-think-level', 'medium'),
+    ttsEnabled: lsGet('ruflow-tts', '') !== 'off'
   };
 
   // This box's HOME (server.js sets env.HOME to the same value at spawn) —

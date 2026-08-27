@@ -767,7 +767,22 @@ const wss = new WebSocketServer({
 // Session helpers
 // ---------------------------------------------------------------------------
 
+/*
+ * A non-string id reached path.basename and leaked a raw Node error to the
+ * client ("The \"path\" argument must be of type string. Received undefined").
+ * Traversal was already safe via basename; this is about not exposing internals
+ * and answering consistently with the "Session not found" a real id gets.
+ */
+function assertSessionId(id) {
+  if (typeof id !== 'string' || !id.trim()) {
+    const err = new Error('A valid session id is required');
+    err.userFacing = true;
+    throw err;
+  }
+}
+
 function sessionPath(id) {
+  assertSessionId(id);
   // Sanitize to prevent directory traversal
   const safe = path.basename(id);
   return path.join(SESSIONS_DIR, `${safe}.json`);
@@ -1266,6 +1281,10 @@ wss.on('connection', (ws) => {
     const ok = projectStore.deleteProject(msg.id, { hard: !!msg.hard });
     if (!ok) return send({ type: 'error', message: 'Project not found' });
     send({ type: 'project_deleted', id: msg.id });
+    // Other tabs had the project open with no idea it was gone: the sidebar row
+    // vanished (they get the list refresh) but the detail panel stayed live and
+    // editable. handleDeleteSession already broadcasts its delete; this did not.
+    broadcast({ type: 'project_deleted', id: msg.id }, ws);
     sendProjectList();
     broadcastSessionUpdate();
   }
@@ -1301,6 +1320,14 @@ wss.on('connection', (ws) => {
   }
 
   function handleDeleteSession(msg) {
+    // Reported success even when nothing was found — so a double-delete, or a
+    // delete of something another tab already removed, both "succeeded".
+    if (!msg.sessionId || typeof msg.sessionId !== 'string') {
+      return send({ type: 'error', message: 'A session id is required' });
+    }
+    if (!loadSession(msg.sessionId)) {
+      return send({ type: 'error', message: 'Session not found' });
+    }
     deleteSessionFile(msg.sessionId);
     send({ type: 'session_deleted', sessionId: msg.sessionId });
     broadcast({ type: 'session_deleted', sessionId: msg.sessionId }, ws);

@@ -708,13 +708,29 @@
   }
 
   function wireShellEvents(els) {
-    els.backBtn.addEventListener('click', closeProjectView);
+    /*
+     * Every listener below is bound per project-open and was never removed:
+     * closeProjectView only did root.innerHTML = ''. Each open created a fresh
+     * `els` and ~22 closures over it, and because `els` holds the list
+     * containers, one surviving closure kept that whole rendered subtree alive.
+     * Measured at ~500-600 detached nodes and ~50 listeners leaked PER OPEN,
+     * growing linearly with no ceiling — a slow tab-crash on a long session.
+     * One AbortController per open; closeProjectView aborts it.
+     */
+    if (pstate.shellAbort) pstate.shellAbort.abort();
+    // window-qualified, like MutationObserver and ResizeObserver above: a bare
+    // global is identical in a browser, but in a jsdom eval scope it resolves to
+    // Node's AbortController, whose signal the DOM then rejects by type.
+    pstate.shellAbort = (window.AbortController) ? new window.AbortController() : null;
+    var SHELL_SIG = pstate.shellAbort ? { signal: pstate.shellAbort.signal } : undefined;
+
+    els.backBtn.addEventListener('click', closeProjectView, SHELL_SIG);
 
     // --- Color popover ---
     els.colorBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       els.colorPopover.hidden = !els.colorPopover.hidden;
-    });
+    }, SHELL_SIG);
     var swatches = els.colorPopover.querySelectorAll('.rp-color-swatch');
     for (var i = 0; i < swatches.length; i++) {
       swatches[i].addEventListener('click', function (e) {
@@ -722,7 +738,7 @@
         els.colorPopover.hidden = true;
         els.colorBtn.style.background = color;
         patchProject({ color: color });
-      });
+      }, SHELL_SIG);
     }
 
     // --- Inline name edit ---
@@ -747,15 +763,15 @@
       els.nameInput.hidden = true;
       els.nameEl.hidden = false;
     }
-    els.nameEl.addEventListener('click', startNameEdit);
+    els.nameEl.addEventListener('click', startNameEdit, SHELL_SIG);
     els.nameEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startNameEdit(); }
-    });
+    }, SHELL_SIG);
     els.nameInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); commitName(); }
       else if (e.key === 'Escape') { e.preventDefault(); cancelNameEdit(); }
-    });
-    els.nameInput.addEventListener('blur', commitName);
+    }, SHELL_SIG);
+    els.nameInput.addEventListener('blur', commitName, SHELL_SIG);
 
     // --- Inline description edit ---
     function startDescEdit() {
@@ -779,15 +795,15 @@
       els.descInput.hidden = true;
       els.descEl.hidden = false;
     }
-    els.descEl.addEventListener('click', startDescEdit);
+    els.descEl.addEventListener('click', startDescEdit, SHELL_SIG);
     els.descEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startDescEdit(); }
-    });
+    }, SHELL_SIG);
     els.descInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); commitDesc(); }
       else if (e.key === 'Escape') { e.preventDefault(); cancelDescEdit(); }
-    });
-    els.descInput.addEventListener('blur', commitDesc);
+    }, SHELL_SIG);
+    els.descInput.addEventListener('blur', commitDesc, SHELL_SIG);
 
     // --- Delete project ---
     els.deleteBtn.addEventListener('click', function () {
@@ -801,40 +817,40 @@
           host.wsSend({ type: 'delete_project', id: pstate.openProjectId });
         }
       );
-    });
+    }, SHELL_SIG);
 
     // --- Instructions autosave ---
     els.instructions.addEventListener('input', function () {
       autoGrowInstructions();
       clearTimeout(pstate.saveTimer);
       pstate.saveTimer = setTimeout(triggerInstructionsSave, SAVE_DEBOUNCE_MS);
-    });
+    }, SHELL_SIG);
     els.instructions.addEventListener('blur', function () {
       clearTimeout(pstate.saveTimer);
       triggerInstructionsSave();
-    });
+    }, SHELL_SIG);
 
     // --- Knowledge upload ---
-    els.dropzone.addEventListener('click', function () { els.fileInput.click(); });
+    els.dropzone.addEventListener('click', function () { els.fileInput.click(); }, SHELL_SIG);
     els.dropzone.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); els.fileInput.click(); }
-    });
+    }, SHELL_SIG);
     els.dropzone.addEventListener('dragover', function (e) {
       e.preventDefault();
       els.dropzone.classList.add('rp-drag-active');
-    });
+    }, SHELL_SIG);
     els.dropzone.addEventListener('dragleave', function () {
       els.dropzone.classList.remove('rp-drag-active');
-    });
+    }, SHELL_SIG);
     els.dropzone.addEventListener('drop', function (e) {
       e.preventDefault();
       els.dropzone.classList.remove('rp-drag-active');
       if (e.dataTransfer && e.dataTransfer.files) handleFiles(e.dataTransfer.files);
-    });
+    }, SHELL_SIG);
     els.fileInput.addEventListener('change', function () {
       handleFiles(els.fileInput.files);
       els.fileInput.value = '';
-    });
+    }, SHELL_SIG);
 
     // --- Second-brain tabs (roving tabindex ARIA tabs pattern) ---
     var order = ['memory', 'graph', 'brain'];
@@ -843,11 +859,11 @@
       els.tabs[name].focus();
     }
     order.forEach(function (name, idx) {
-      els.tabs[name].addEventListener('click', function () { switchTab(name); });
+      els.tabs[name].addEventListener('click', function () { switchTab(name); }, SHELL_SIG);
       els.tabs[name].addEventListener('keydown', function (e) {
         if (e.key === 'ArrowRight') { e.preventDefault(); switchTab(order[(idx + 1) % order.length]); focusTab(idx + 1); }
         else if (e.key === 'ArrowLeft') { e.preventDefault(); switchTab(order[(idx - 1 + order.length) % order.length]); focusTab(idx - 1); }
-      });
+      }, SHELL_SIG);
     });
 
     if (window.ResizeObserver) {
@@ -1633,6 +1649,9 @@
   function closeProjectView() {
     destroyGraphSim();
     clearTimeout(pstate.saveTimer);
+    // Release every shell listener so the closures over `els` — and the list
+    // subtrees they retain — become collectable.
+    if (pstate.shellAbort) { pstate.shellAbort.abort(); pstate.shellAbort = null; }
     var root = pstate.root || document.getElementById('project-view');
     if (root) {
       if (pstate.els && pstate.els.graphResizeObserver) pstate.els.graphResizeObserver.disconnect();

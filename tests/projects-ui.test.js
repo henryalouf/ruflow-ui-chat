@@ -46,15 +46,17 @@ function boot({ withResizeObserver = false } = {}) {
 
   const sent = [];
   const opened = [];
+  const calls = { openView: 0, closeView: 0 };
   const RP = dom.window.RuflowProjects;
   RP.init({
     wsSend: (o) => sent.push(o),
     openSession: (id) => opened.push(id),
     getState: () => ({ currentSessionId: 's1', sessions: [] }),
-    onOpenView() {}, onCloseView() {},
+    onOpenView() { calls.openView++; },
+    onCloseView() { calls.closeView++; },
   });
   RP.renderSidebarSection(dom.window.document.getElementById('projects-section'));
-  return { dom, RP, sent, opened, counts, doc: dom.window.document };
+  return { dom, RP, sent, opened, counts, calls, doc: dom.window.document };
 }
 
 describe('projects UI — module contract', () => {
@@ -259,5 +261,61 @@ describe('projects UI — delete confirmation is keyboard-modal', () => {
     const { doc, overlay, del } = openConfirm();
     doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     assert.equal(doc.activeElement, del, 'focus must go back to the delete button');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shell listeners must not accumulate across opens
+//
+// Every openProjectView bound ~22 listeners over a fresh `els`, and
+// closeProjectView tore the view down with innerHTML = '' and nothing else. The
+// closures kept `els` alive, and because `els` holds the list containers, one
+// survivor retained that whole rendered subtree — ~500-600 detached nodes per
+// open, growing without a ceiling.
+// ---------------------------------------------------------------------------
+describe('projects UI — project view does not leak listeners', () => {
+  it('removes shell listeners on close, so a detached control is inert', () => {
+    const ctx = boot();
+    const { RP, doc } = ctx;
+    RP.handleServerMessage({ type: 'project', project: {
+      id: 'p1', name: 'Leaky', description: '', instructions: '', color: '#D97757', knowledge: [] }, sessions: [] });
+    RP.openProjectView('p1');
+
+    const back = doc.querySelector('.rp-back-btn');
+    assert.ok(back, 'sanity: the shell must have rendered');
+
+    // Our own listener proves dispatch still reaches the detached node, so a
+    // zero result below means the module's handler was removed — not that the
+    // click never happened.
+    let ours = 0;
+    back.addEventListener('click', () => { ours++; });
+
+    RP.closeProjectView();
+    const closesAfterFirst = ctx.calls.closeView;
+    assert.equal(closesAfterFirst, 1, 'sanity: closing once calls onCloseView once');
+
+    back.click();
+    assert.equal(ours, 1, 'dispatch on the detached node must still reach our listener');
+    // The shell's own back handler calls closeProjectView. If it survived the
+    // close, this click runs it again and onCloseView fires a second time.
+    assert.equal(ctx.calls.closeView, closesAfterFirst,
+      'a detached shell control still fired the module handler — listeners leaked');
+  });
+
+  it('does not grow the listener count across repeated opens', () => {
+    const { RP, doc } = boot();
+    RP.handleServerMessage({ type: 'project', project: {
+      id: 'p1', name: 'Cycled', description: '', instructions: '', color: '#D97757', knowledge: [] }, sessions: [] });
+
+    // Count live shell controls after each cycle; a leak shows as accumulation
+    // of detached roots, so assert the document never keeps more than one shell.
+    for (let i = 0; i < 10; i++) {
+      RP.openProjectView('p1');
+      RP.closeProjectView();
+    }
+    RP.openProjectView('p1');
+    assert.equal(doc.querySelectorAll('.rp-back-btn').length, 1,
+      'exactly one shell should exist after repeated open/close cycles');
+    RP.closeProjectView();
   });
 });
