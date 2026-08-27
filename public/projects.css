@@ -1,11 +1,87 @@
 /* ============================================
    Ruflow Projects - scoped styles (.rp- prefix)
-   Uses only the existing design tokens from style.css.
+
+   Design tokens: own --rp-* set (this file's tokens, not the host's
+   --bg-primary/--text-primary/etc.) so the Projects UI can carry the real
+   Anthropic/Claude look - warm paper-toned neutrals + the clay/terracotta
+   accent (#D97757) used sparingly - independent of the host app's GitHub-
+   style dark palette in style.css. Every .rp- rule below consumes only
+   --rp-* custom properties.
+
+   Theming mirrors the mechanism app.js already uses (see style.css's own
+   SPEC-v2 block): explicit toggle via [data-theme="light"] on <html>,
+   default (no attribute) is dark. Two layers:
+     1. :root / [data-theme="dark"]      - dark default
+     2. [data-theme="light"]             - the toggle's explicit choice
+   Deliberately NOT keyed on prefers-color-scheme: the host app ignores the OS
+   setting entirely, so honouring it here would light this panel while leaving
+   the rest of the app dark. Every token has a base value in (1).
+
+   Two tokens intentionally alias host tokens instead of inventing new
+   values, because the underlying value is produced elsewhere and must
+   match exactly:
+     --rp-bg-canvas  -> var(--bg-primary)   the graph canvas in projects.js
+                         clears itself to getComputedStyle(...).--bg-primary
+                         (see themeColors()); the wrapper background has to
+                         be pixel-identical or the canvas edge would show.
+     --rp-success/error -> var(--success-green)/var(--error-red) - pure
+                         semantic feedback colors, already theme-aware in
+                         style.css, no aesthetic reason to diverge.
    ============================================ */
+
+:root,
+[data-theme="dark"] {
+  --rp-bg-page: #262624;
+  --rp-bg-card: #30302E;
+  --rp-bg-chip: #35342F;
+  --rp-bg-input: #1F1E1D;
+  --rp-hover: #3A3935;
+  --rp-border: rgba(250, 249, 245, 0.10);
+  --rp-text-primary: #F0EEE6;
+  --rp-text-secondary: #ABA99D;
+  --rp-text-dim: #7C7A70;
+  --rp-accent: #D97757;
+  --rp-accent-text: var(--rp-accent);  /* clay already clears 4.5:1 on dark surfaces */
+  --rp-accent-soft: rgba(217, 119, 87, 0.16);
+  --rp-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --rp-overlay: rgba(20, 19, 17, 0.6);
+  --rp-bg-canvas: var(--bg-primary);
+  --rp-success: var(--success-green);
+  --rp-error: var(--error-red);
+}
+
+/*
+ * NOTE: deliberately NO @media (prefers-color-scheme) here.
+ *
+ * This app is attribute-driven: the top-bar toggle sets data-theme="light" on
+ * <html> and persists it in localStorage, defaulting to dark with no attribute
+ * (app.js:2098-2111), and style.css:1906 says so explicitly. A media query
+ * would flip THIS panel to light off the OS setting while the rest of the app
+ * stayed dark — light text on dark chrome, which is exactly what it did.
+ * Follow the app's toggle, not the operating system.
+ */
+
+[data-theme="light"] {
+  --rp-bg-page: #FAF9F5;
+  --rp-bg-card: #F5F3EC;
+  --rp-bg-chip: #F0EEE6;
+  --rp-bg-input: #FFFFFF;
+  --rp-hover: #ECE9DF;
+  --rp-border: rgba(61, 61, 58, 0.12);
+  --rp-text-primary: #3D3D3A;
+  --rp-text-secondary: #73716A;
+  --rp-text-dim: #94928A;
+  --rp-accent: #D97757;
+  --rp-accent-text: #AD5233;  /* darkened clay: ~4.8:1 on --rp-bg-card, the raw
+                                  accent is ~2.9:1 here and fails AA for text */
+  --rp-accent-soft: rgba(217, 119, 87, 0.12);
+  --rp-shadow: 0 8px 24px rgba(61, 53, 45, 0.12);
+  --rp-overlay: rgba(61, 61, 58, 0.45);
+}
 
 /* --- Sidebar section (#projects-section) --- */
 .rp-sidebar-section {
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--rp-border);
 }
 
 .rp-section {
@@ -24,7 +100,7 @@
 
 .rp-side-chevron {
   display: flex;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   transition: transform 0.2s ease;
 }
 .rp-side-chevron.rp-collapsed {
@@ -35,7 +111,7 @@
   flex: 1;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -46,7 +122,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
@@ -56,8 +132,8 @@
   transition: background 0.2s ease, color 0.2s ease;
 }
 .rp-add-btn:hover {
-  background: var(--hover-bg);
-  color: var(--text-primary);
+  background: var(--rp-hover);
+  color: var(--rp-text-primary);
 }
 
 .rp-project-list {
@@ -72,8 +148,8 @@
 .rp-empty {
   padding: 8px 12px;
   font-size: 12px;
-  color: var(--text-secondary);
-  opacity: 0.75;
+  color: var(--rp-text-secondary);
+  opacity: 0.85;
 }
 .rp-side-empty {
   padding: 4px 4px 6px;
@@ -86,16 +162,16 @@
   width: 100%;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid var(--border-color);
-  background: var(--input-bg);
-  color: var(--text-primary);
+  border: 1px solid var(--rp-border);
+  background: var(--rp-bg-input);
+  color: var(--rp-text-primary);
   font-size: 13px;
   font-family: var(--font-main);
   outline: none;
   box-sizing: border-box;
 }
 .rp-new-input:focus {
-  border-color: var(--accent-primary);
+  border-color: var(--rp-accent);
 }
 
 .rp-project-row {
@@ -108,11 +184,11 @@
   transition: background 0.2s ease;
 }
 .rp-project-row:hover {
-  background: var(--hover-bg);
+  background: var(--rp-hover);
 }
 .rp-project-row.active {
-  background: var(--hover-bg);
-  border-left: 3px solid var(--accent-primary);
+  background: var(--rp-accent-soft);
+  border-left: 3px solid var(--rp-accent);
   padding-left: 5px;
 }
 
@@ -126,7 +202,7 @@
 .rp-project-name {
   flex: 1;
   font-size: 13px;
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -134,7 +210,7 @@
 
 .rp-project-count {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   flex-shrink: 0;
 }
 
@@ -143,10 +219,10 @@
   position: fixed;
   min-width: 180px;
   max-width: 260px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  background: var(--rp-bg-card);
+  border: 1px solid var(--rp-border);
+  border-radius: 10px;
+  box-shadow: var(--rp-shadow);
   padding: 4px;
   z-index: 1200;
   display: flex;
@@ -164,17 +240,17 @@
   border: none;
   background: transparent;
   border-radius: 6px;
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
   font-size: 13px;
   font-family: var(--font-main);
   text-align: left;
   cursor: pointer;
 }
 .rp-attach-item:hover {
-  background: var(--hover-bg);
+  background: var(--rp-hover);
 }
 .rp-attach-item.active {
-  background: var(--hover-bg);
+  background: var(--rp-accent-soft);
   font-weight: 600;
 }
 .rp-attach-dot {
@@ -185,13 +261,13 @@
 }
 .rp-attach-dot-none {
   background: transparent;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--rp-border);
 }
 
 /* --- Project view (#project-view, host-owned element) --- */
 #project-view.rp-view {
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: var(--rp-bg-page);
+  color: var(--rp-text-primary);
   min-height: 0;
 }
 #project-view.rp-view:not([hidden]) {
@@ -204,12 +280,12 @@
 .rp-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px 40px;
+  padding: 24px 28px 40px;
 }
 
 /* --- Header --- */
 .rp-header {
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 .rp-header-top {
   display: flex;
@@ -219,7 +295,7 @@
 .rp-back-btn {
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   cursor: pointer;
   padding: 6px;
   border-radius: 8px;
@@ -230,8 +306,8 @@
   flex-shrink: 0;
 }
 .rp-back-btn:hover {
-  background: var(--hover-bg);
-  color: var(--text-primary);
+  background: var(--rp-hover);
+  color: var(--rp-text-primary);
 }
 
 .rp-color-wrap {
@@ -245,7 +321,7 @@
   border: none;
   cursor: pointer;
   padding: 0;
-  background: var(--accent-primary);
+  background: var(--rp-accent);
 }
 .rp-color-popover {
   position: absolute;
@@ -256,10 +332,10 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   padding: 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  background: var(--rp-bg-card);
+  border: 1px solid var(--rp-border);
+  border-radius: 10px;
+  box-shadow: var(--rp-shadow);
 }
 .rp-color-swatch {
   width: 18px;
@@ -270,13 +346,13 @@
   padding: 0;
 }
 .rp-color-swatch:hover {
-  border-color: var(--text-primary);
+  border-color: var(--rp-text-primary);
 }
 
 .rp-name {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--rp-text-primary);
   cursor: text;
   padding: 2px 6px;
   border-radius: 6px;
@@ -286,15 +362,15 @@
   white-space: nowrap;
 }
 .rp-name:hover {
-  background: var(--hover-bg);
+  background: var(--rp-hover);
 }
 .rp-name-input {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 19px;
+  font-weight: 600;
   font-family: var(--font-main);
-  color: var(--text-primary);
-  background: var(--input-bg);
-  border: 1px solid var(--accent-primary);
+  color: var(--rp-text-primary);
+  background: var(--rp-bg-input);
+  border: 1px solid var(--rp-accent);
   border-radius: 6px;
   padding: 2px 6px;
   outline: none;
@@ -308,7 +384,7 @@
 .rp-delete-btn {
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   cursor: pointer;
   padding: 6px;
   border-radius: 8px;
@@ -318,8 +394,8 @@
   transition: background 0.2s ease, color 0.2s ease;
 }
 .rp-delete-btn:hover {
-  background: var(--hover-bg);
-  color: var(--error-red);
+  background: var(--rp-hover);
+  color: var(--rp-error);
 }
 
 .rp-desc {
@@ -327,17 +403,17 @@
   margin-top: 6px;
   margin-left: 42px;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   cursor: text;
   padding: 2px 6px;
   border-radius: 6px;
   max-width: 70%;
 }
 .rp-desc:hover {
-  background: var(--hover-bg);
+  background: var(--rp-hover);
 }
 .rp-desc.rp-placeholder {
-  opacity: 0.6;
+  opacity: 0.7;
   font-style: italic;
 }
 .rp-desc-input {
@@ -347,20 +423,24 @@
   width: calc(70% - 12px);
   font-size: 13px;
   font-family: var(--font-main);
-  color: var(--text-primary);
-  background: var(--input-bg);
-  border: 1px solid var(--accent-primary);
+  color: var(--rp-text-primary);
+  background: var(--rp-bg-input);
+  border: 1px solid var(--rp-accent);
   border-radius: 6px;
   padding: 2px 6px;
   outline: none;
 }
 
 /* --- Body layout --- */
-.rp-body {
+/* Claude Projects layout: work on top, reference underneath. */
+.rp-top {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
+}
+.rp-bottom {
+  margin-top: 20px;
 }
 .rp-col {
   display: flex;
@@ -369,11 +449,12 @@
   min-width: 0;
 }
 
-.rp-body .rp-section {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 14px;
+.rp-top .rp-section,
+.rp-bottom .rp-section {
+  background: var(--rp-bg-card);
+  border: 1px solid var(--rp-border);
+  border-radius: 12px;
+  padding: 16px;
 }
 
 .rp-section-head {
@@ -385,39 +466,42 @@
 .rp-section-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .rp-save-indicator {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   min-height: 14px;
 }
 .rp-save-saving {
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
 }
 .rp-save-saved {
-  color: var(--success-green);
+  color: var(--rp-success);
+}
+.rp-save-error {
+  color: var(--rp-error);
 }
 
 .rp-instructions {
   width: 100%;
   min-height: 110px;
   resize: vertical;
-  background: var(--input-bg);
-  border: 1px solid var(--border-color);
+  background: var(--rp-bg-input);
+  border: 1px solid var(--rp-border);
   border-radius: 8px;
   padding: 10px 12px;
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
   font-family: var(--font-main);
   font-size: 13px;
   outline: none;
   box-sizing: border-box;
 }
 .rp-instructions:focus {
-  border-color: var(--accent-primary);
+  border-color: var(--rp-accent);
 }
 
 /* --- Knowledge --- */
@@ -427,9 +511,9 @@
   align-items: center;
   gap: 4px;
   padding: 18px 12px;
-  border: 1px dashed var(--border-color);
+  border: 1px dashed var(--rp-border);
   border-radius: 8px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   font-size: 13px;
   cursor: pointer;
   text-align: center;
@@ -437,12 +521,12 @@
 }
 .rp-dropzone:hover,
 .rp-dropzone.rp-drag-active {
-  border-color: var(--accent-primary);
-  background: var(--hover-bg);
+  border-color: var(--rp-accent);
+  background: var(--rp-accent-soft);
 }
 .rp-dropzone-icon {
   font-size: 18px;
-  color: var(--accent-primary);
+  color: var(--rp-accent);
 }
 .rp-dropzone-hint {
   font-size: 11px;
@@ -466,26 +550,26 @@
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--bg-tertiary);
+  border-radius: 8px;
+  background: var(--rp-bg-chip);
 }
 .rp-file-name {
   flex: 1;
   font-size: 12px;
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .rp-file-size {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   flex-shrink: 0;
 }
 .rp-file-remove {
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   cursor: pointer;
   font-size: 15px;
   line-height: 1;
@@ -494,27 +578,27 @@
   flex-shrink: 0;
 }
 .rp-file-remove:hover {
-  color: var(--error-red);
+  color: var(--rp-error);
 }
 
 .rp-uploading .rp-progress-track {
   flex: 1;
   height: 4px;
   border-radius: 2px;
-  background: var(--border-color);
+  background: var(--rp-border);
   overflow: hidden;
 }
 .rp-progress-fill {
   display: block;
   height: 100%;
-  background: var(--accent-primary);
+  background: var(--rp-accent);
   transition: width 0.15s ease;
 }
 
 /* --- Chats --- */
 .rp-chats-count {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
 }
 .rp-chat-item {
   display: flex;
@@ -522,23 +606,23 @@
   justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.2s ease;
 }
 .rp-chat-item:hover {
-  background: var(--hover-bg);
+  background: var(--rp-hover);
 }
 .rp-chat-name {
   font-size: 12px;
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .rp-chat-time {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   flex-shrink: 0;
 }
 
@@ -546,13 +630,13 @@
 .rp-tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--rp-border);
   margin-bottom: 10px;
 }
 .rp-tab {
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   font-family: var(--font-main);
   font-size: 12px;
   font-weight: 600;
@@ -563,11 +647,11 @@
   transition: color 0.2s ease, border-color 0.2s ease;
 }
 .rp-tab:hover {
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
 }
 .rp-tab.active {
-  color: var(--accent-primary);
-  border-bottom-color: var(--accent-primary);
+  color: var(--rp-accent-text);
+  border-bottom-color: var(--rp-accent);
 }
 
 .rp-tabpanel {
@@ -577,17 +661,17 @@
 .rp-memory-item,
 .rp-brain-item {
   padding: 8px;
-  border-radius: 6px;
-  background: var(--bg-tertiary);
+  border-radius: 8px;
+  background: var(--rp-bg-chip);
 }
 .rp-memory-name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
 }
 .rp-memory-snippet {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   margin-top: 2px;
   overflow: hidden;
   display: -webkit-box;
@@ -598,13 +682,13 @@
   margin-top: 6px;
   height: 3px;
   border-radius: 2px;
-  background: var(--border-color);
+  background: var(--rp-border);
   overflow: hidden;
 }
 .rp-score-fill {
   display: block;
   height: 100%;
-  background: var(--accent-primary);
+  background: var(--rp-accent);
 }
 
 .rp-brain-top {
@@ -616,8 +700,8 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--accent-blue);
-  background: rgba(31, 111, 235, 0.15);
+  color: var(--rp-accent-text);
+  background: var(--rp-accent-soft);
   border-radius: 4px;
   padding: 1px 6px;
   flex-shrink: 0;
@@ -625,11 +709,11 @@
 .rp-brain-name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
 }
 .rp-brain-desc {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   margin-top: 4px;
 }
 
@@ -637,10 +721,10 @@
 .rp-graph-wrap {
   position: relative;
   height: 260px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--rp-border);
   border-radius: 8px;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: var(--rp-bg-canvas);
 }
 .rp-graph-canvas {
   width: 100%;
@@ -658,7 +742,7 @@
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   text-align: center;
   padding: 0 20px;
 }
@@ -667,7 +751,7 @@
   bottom: 6px;
   left: 8px;
   font-size: 10px;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   opacity: 0.7;
   pointer-events: none;
 }
@@ -684,17 +768,17 @@
 }
 .rp-toast {
   padding: 10px 16px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 13px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  background: var(--rp-bg-card);
+  border: 1px solid var(--rp-border);
+  color: var(--rp-text-primary);
+  box-shadow: var(--rp-shadow);
   transition: opacity 0.2s ease;
 }
 .rp-toast-error {
-  border-color: var(--error-red);
-  color: var(--error-red);
+  border-color: var(--rp-error);
+  color: var(--rp-error);
 }
 .rp-toast-out {
   opacity: 0;
@@ -704,7 +788,7 @@
 .rp-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--rp-overlay);
   display: none;
   align-items: center;
   justify-content: center;
@@ -714,20 +798,22 @@
   display: flex;
 }
 .rp-modal {
-  background: var(--bg-secondary);
-  border-radius: 12px;
+  background: var(--rp-bg-card);
+  border: 1px solid var(--rp-border);
+  border-radius: 14px;
   padding: 24px;
   max-width: 400px;
   width: 90%;
+  box-shadow: var(--rp-shadow);
 }
 .rp-modal h3 {
   margin: 0 0 8px 0;
   font-size: 16px;
-  color: var(--text-primary);
+  color: var(--rp-text-primary);
 }
 .rp-modal p {
   margin: 0 0 20px 0;
-  color: var(--text-secondary);
+  color: var(--rp-text-secondary);
   font-size: 14px;
 }
 .rp-modal-actions {
@@ -745,18 +831,18 @@
   transition: background 0.2s ease;
 }
 .rp-btn-ghost {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
+  background: var(--rp-bg-chip);
+  color: var(--rp-text-primary);
 }
 .rp-btn-ghost:hover {
-  background: var(--hover-bg);
+  background: var(--rp-hover);
 }
 .rp-btn-danger {
-  background: var(--error-red);
+  background: var(--rp-error);
   color: #fff;
 }
 .rp-btn-danger:hover {
-  background: #da3633;
+  background: color-mix(in srgb, var(--rp-error) 85%, black);
 }
 
 /* --- Accessibility --- */
@@ -775,13 +861,13 @@
 .rp-tab:focus-visible,
 .rp-attach-item:focus-visible,
 .rp-btn:focus-visible {
-  outline: 2px solid var(--accent-primary);
+  outline: 2px solid var(--rp-accent);
   outline-offset: 2px;
 }
 
 /* --- Responsive --- */
 @media (max-width: 900px) {
-  .rp-body {
+  .rp-top {
     grid-template-columns: 1fr;
   }
   .rp-name,
@@ -813,4 +899,130 @@
   .rp-toast {
     transition: none !important;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * [hidden] must actually hide.
+ *
+ * This bit the UI in six places and shipped visibly broken. The UA stylesheet's
+ * [hidden]{display:none} is the weakest possible rule, so ANY selector here that
+ * sets an explicit display silently defeats it:
+ *   #chat-messages{display:flex}    -> project view rendered on top of the chat
+ *   .rp-color-popover{display:grid} -> colour picker stuck open over the title
+ *   .rp-desc-input{display:block}   -> raw edit box drawn across the header
+ * plus .rp-name-input, .rp-file-input and the graph canvas/empty states.
+ *
+ * Setting el.hidden = true was doing nothing at all. One rule fixes the class of
+ * bug instead of the instances, so a new hidden-toggled element cannot regress.
+ * Scoped to the project UI plus the two chat containers app.js toggles.
+ * ------------------------------------------------------------------------- */
+#project-view [hidden],
+#projects-section [hidden],
+.rp-attach-menu[hidden],
+#chat-messages[hidden],
+#input-area[hidden] {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * Knowledge file viewer
+ *
+ * Filenames were previously inert spans: the bytes were on disk and reachable
+ * over the API, but nothing in the UI opened them. They are buttons now, so
+ * they must read as text, not as chrome.
+ * ------------------------------------------------------------------------- */
+.rp-file-name {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+.rp-file-name:hover {
+  color: var(--rp-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rp-file-name:focus-visible {
+  outline: 2px solid var(--rp-accent);
+  outline-offset: 2px;
+}
+
+.rp-modal-wide {
+  /* .rp-modal caps at max-width:400px for the confirm dialog; a document
+     viewer has to override that cap, not just widen `width`. */
+  width: min(940px, 94vw);
+  max-width: min(940px, 94vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+}
+.rp-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.rp-view-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--rp-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rp-view-body {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  background: var(--rp-bg-input);
+  border: 1px solid var(--rp-border);
+  border-radius: 8px;
+  font-family: var(--font-code);
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--rp-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rp-view-body:focus-visible {
+  outline: 2px solid var(--rp-accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Keep the top section from growing unbounded.
+ *
+ * A project with 16 knowledge files made .rp-top 980px tall, which pushed the
+ * second brain to y=1201 — off-screen on any normal laptop. The lists scroll
+ * inside their own card instead, so the page stays navigable no matter how
+ * much a project accumulates.
+ * ------------------------------------------------------------------------- */
+.rp-knowledge-list,
+.rp-chats-list {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.rp-col-main .rp-section,
+.rp-col-side .rp-section {
+  min-width: 0;
+}
+/* The chats card is the primary surface — give it presence even when near-empty. */
+.rp-col-main .rp-chats-list:empty::after,
+.rp-col-main .rp-chats-list {
+  min-height: 64px;
 }

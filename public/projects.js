@@ -142,6 +142,62 @@
     }, 3600);
   }
 
+  /**
+   * Read a knowledge file in place.
+   *
+   * The GET route sends Content-Disposition: attachment so a stored filename can
+   * never drive an inline render, which means we cannot just navigate to it —
+   * that would download. Fetch the bytes and paint them into a dialog instead.
+   */
+  function viewKnowledgeFile(fileId, fileName) {
+    var pid = pstate.openProjectId;
+    if (!pid) return;
+    var overlay = document.getElementById('rp-view-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'rp-view-overlay';
+      overlay.className = 'rp-modal-overlay';
+      overlay.innerHTML =
+        '<div class="rp-modal rp-modal-wide" role="dialog" aria-modal="true" aria-labelledby="rp-view-title">' +
+          '<div class="rp-view-head">' +
+            '<h3 id="rp-view-title"></h3>' +
+            '<button type="button" class="rp-btn rp-btn-ghost" id="rp-view-close">Close</button>' +
+          '</div>' +
+          '<pre class="rp-view-body" id="rp-view-body" tabindex="0"></pre>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) overlay.classList.remove('rp-open');
+      });
+      overlay.querySelector('#rp-view-close').addEventListener('click', function () {
+        overlay.classList.remove('rp-open');
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') overlay.classList.remove('rp-open');
+      });
+    }
+    overlay.querySelector('#rp-view-title').textContent = fileName || 'File';
+    var body = overlay.querySelector('#rp-view-body');
+    body.textContent = 'Loading\u2026';
+    overlay.classList.add('rp-open');
+
+    fetch('/api/projects/' + encodeURIComponent(pid) + '/knowledge/' + encodeURIComponent(fileId), {
+      credentials: 'same-origin',
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Server returned ' + r.status);
+        return r.text();
+      })
+      .then(function (text) {
+        // textContent, never innerHTML — this is untrusted file content.
+        body.textContent = text;
+        body.focus();
+      })
+      .catch(function (err) {
+        body.textContent = 'Could not open this file: ' + err.message;
+      });
+  }
+
   function confirmDialog(title, message, confirmLabel, onConfirm) {
     var overlay = document.getElementById('rp-confirm-overlay');
     if (!overlay) {
@@ -458,8 +514,19 @@
           '<span class="rp-desc" tabindex="0" role="button" aria-label="Project description, click to edit"></span>' +
           '<input type="text" class="rp-desc-input" hidden aria-label="Edit project description" maxlength="500">' +
         '</div>' +
-        '<div class="rp-body">' +
-          '<div class="rp-col rp-col-left">' +
+        /*
+         * Layout mirrors Claude Projects: the chats you actually work in sit at
+         * the top next to the project's knowledge, and the second brain — which
+         * is reference material, not the task — spans the full width below.
+         */
+        '<div class="rp-top">' +
+          '<div class="rp-col rp-col-main">' +
+            '<div class="rp-section">' +
+              '<div class="rp-section-head"><span class="rp-section-title">Chats in this project</span><span class="rp-chats-count"></span></div>' +
+              '<ul class="rp-chats-list"></ul>' +
+            '</div>' +
+          '</div>' +
+          '<div class="rp-col rp-col-side">' +
             '<div class="rp-section">' +
               '<div class="rp-section-head"><span class="rp-section-title">Instructions</span><span class="rp-save-indicator"></span></div>' +
               '<textarea class="rp-instructions" placeholder="Custom instructions injected into every chat in this project..." aria-label="Project instructions"></textarea>' +
@@ -474,29 +541,25 @@
               '<input type="file" class="rp-file-input" multiple hidden aria-hidden="true">' +
               '<ul class="rp-knowledge-list"></ul>' +
             '</div>' +
-            '<div class="rp-section">' +
-              '<div class="rp-section-head"><span class="rp-section-title">Chats in this project</span><span class="rp-chats-count"></span></div>' +
-              '<ul class="rp-chats-list"></ul>' +
-            '</div>' +
           '</div>' +
-          '<div class="rp-col rp-col-right">' +
-            '<div class="rp-section rp-brain">' +
-              '<div class="rp-section-head"><span class="rp-section-title">Second brain</span></div>' +
-              '<div class="rp-tabs" role="tablist" aria-label="Second brain data">' +
-                '<button type="button" class="rp-tab active" role="tab" id="rp-tab-memory" aria-selected="true" aria-controls="rp-panel-memory" tabindex="0">Memory</button>' +
-                '<button type="button" class="rp-tab" role="tab" id="rp-tab-graph" aria-selected="false" aria-controls="rp-panel-graph" tabindex="-1">Graph</button>' +
-                '<button type="button" class="rp-tab" role="tab" id="rp-tab-brain" aria-selected="false" aria-controls="rp-panel-brain" tabindex="-1">Brain</button>' +
-              '</div>' +
-              '<div class="rp-tabpanel" id="rp-panel-memory" role="tabpanel" aria-labelledby="rp-tab-memory"><ul class="rp-memory-list"></ul></div>' +
-              '<div class="rp-tabpanel" id="rp-panel-graph" role="tabpanel" aria-labelledby="rp-tab-graph" hidden>' +
-                '<div class="rp-graph-wrap">' +
-                  '<canvas class="rp-graph-canvas"></canvas>' +
-                  '<div class="rp-graph-empty"></div>' +
-                  '<div class="rp-graph-hint">Drag to pan &middot; scroll to zoom &middot; hover a node</div>' +
-                '</div>' +
-              '</div>' +
-              '<div class="rp-tabpanel" id="rp-panel-brain" role="tabpanel" aria-labelledby="rp-tab-brain" hidden><ul class="rp-brain-list"></ul></div>' +
+        '</div>' +
+        '<div class="rp-bottom">' +
+          '<div class="rp-section rp-brain">' +
+            '<div class="rp-section-head"><span class="rp-section-title">Second brain</span><span class="rp-brain-meta"></span></div>' +
+            '<div class="rp-tabs" role="tablist" aria-label="Second brain data">' +
+              '<button type="button" class="rp-tab active" role="tab" id="rp-tab-memory" aria-selected="true" aria-controls="rp-panel-memory" tabindex="0">Memory</button>' +
+              '<button type="button" class="rp-tab" role="tab" id="rp-tab-graph" aria-selected="false" aria-controls="rp-panel-graph" tabindex="-1">Graph</button>' +
+              '<button type="button" class="rp-tab" role="tab" id="rp-tab-brain" aria-selected="false" aria-controls="rp-panel-brain" tabindex="-1">Brain</button>' +
             '</div>' +
+            '<div class="rp-tabpanel" id="rp-panel-memory" role="tabpanel" aria-labelledby="rp-tab-memory"><ul class="rp-memory-list"></ul></div>' +
+            '<div class="rp-tabpanel" id="rp-panel-graph" role="tabpanel" aria-labelledby="rp-tab-graph" hidden>' +
+              '<div class="rp-graph-wrap">' +
+                '<canvas class="rp-graph-canvas"></canvas>' +
+                '<div class="rp-graph-empty"></div>' +
+                '<div class="rp-graph-hint">Drag to pan &middot; scroll to zoom &middot; hover a node</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="rp-tabpanel" id="rp-panel-brain" role="tabpanel" aria-labelledby="rp-tab-brain" hidden><ul class="rp-brain-list"></ul></div>' +
           '</div>' +
         '</div>' +
       '</div>'
@@ -824,9 +887,17 @@
       var f = files[i];
       var li = document.createElement('li');
       li.className = 'rp-knowledge-item';
-      var name = document.createElement('span');
+      // Clickable: the content is on disk and was previously unreachable from
+      // the UI — the row rendered a name and a size and nothing opened it.
+      var name = document.createElement('button');
+      name.type = 'button';
       name.className = 'rp-file-name';
+      name.title = 'Open ' + (f.name || 'file');
+      name.setAttribute('aria-label', 'Open ' + (f.name || 'file'));
       name.textContent = f.name || 'file';
+      (function (fileId, fileName) {
+        name.addEventListener('click', function () { viewKnowledgeFile(fileId, fileName); });
+      })(f.id, f.name);
       li.appendChild(name);
       var size = document.createElement('span');
       size.className = 'rp-file-size';

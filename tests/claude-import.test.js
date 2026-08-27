@@ -546,3 +546,32 @@ describe('importAll — project timestamps land on disk', () => {
     assert.ok(t >= before - 1000, 'a local project must be stamped now(), not backdated');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Knowledge filenames — both key spellings
+//
+// The live claude.ai API returns `file_name`; the official export uses
+// `filename`. The importer originally read only `filename`, so an API-sourced
+// import fell back to d.uuid and every knowledge file in the UI was listed as
+// a raw hex string. Nothing failed loudly — it just looked broken.
+// ---------------------------------------------------------------------------
+describe('toRuflow — knowledge filenames', () => {
+  const mk = (doc) => toRuflow({
+    projects: [{ uuid: 'p-fn', name: 'FN', description: '', created_at: '2026-01-01T00:00:00Z',
+                 updated_at: '2026-01-01T00:00:00Z', docs: [doc] }],
+    conversations: [], warnings: [],
+  }).projects[0].knowledge[0];
+
+  it('uses file_name (live API shape)', () => {
+    assert.equal(mk({ uuid: 'u1', file_name: 'leads/clark-hicks.md', content: '#x' }).name, 'leads/clark-hicks.md');
+  });
+
+  it('uses filename (export shape)', () => {
+    assert.equal(mk({ uuid: 'u2', filename: 'brief.md', content: '#x' }).name, 'brief.md');
+  });
+
+  it('falls back to the uuid only when there is genuinely no name', () => {
+    // The paired positive case above proves this branch is not just always taken.
+    assert.equal(mk({ uuid: 'u3', content: '#x' }).name, 'u3');
+  });
+});

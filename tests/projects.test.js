@@ -567,3 +567,59 @@ describe('Projects — listProjects', () => {
     assert.deepEqual(store.listProjects(), []);
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildProjectPrompt — retrieval, not a dump
+//
+// Every turn in a project injects this. Dumping all knowledge cost ~16.5k
+// tokens per message on a 16-file project, nearly all of it irrelevant to what
+// was actually asked. With a query it ranks and inlines only what matters, and
+// names the rest so an omission can never read as "the project has nothing
+// about that".
+// ---------------------------------------------------------------------------
+describe('Projects — buildProjectPrompt retrieval', () => {
+  function seed() {
+    const p = store.createProject({ name: 'Leads', description: '', instructions: 'Be concrete.' });
+    store.addKnowledge(p.id, { name: 'clark-hicks-terms.md', mime: 'text/markdown',
+      buffer: Buffer.from('Clark Hicks agreed one thousand pounds for the build.') });
+    store.addKnowledge(p.id, { name: 'unrelated-pricing.md', mime: 'text/markdown',
+      buffer: Buffer.from('Generic pricing notes with no names in them at all.') });
+    store.addKnowledge(p.id, { name: 'another-unrelated.md', mime: 'text/markdown',
+      buffer: Buffer.from('Something else entirely, about hosting uptime.') });
+    return p;
+  }
+
+  it('inlines the matching file and lists the others by name', () => {
+    const p = seed();
+    const out = store.buildProjectPrompt(p.id, { query: 'what did clark hicks agree', budget: 4000 });
+
+    assert.ok(out.includes('Clark Hicks agreed one thousand'), 'the matching file must be inlined');
+    assert.ok(out.includes('OTHER FILES IN THIS PROJECT'), 'non-matching files must still be named');
+    assert.ok(out.includes('unrelated-pricing.md'), 'a skipped file must appear in the index');
+    assert.ok(!out.includes('Generic pricing notes'), 'a skipped file must NOT be inlined');
+    assert.ok(out.includes('Be concrete.'), 'instructions are always kept');
+  });
+
+  it('still returns everything when there is no query (paired positive case)', () => {
+    const p = seed();
+    const out = store.buildProjectPrompt(p.id);
+    assert.ok(out.includes('Clark Hicks agreed'), 'no-query path keeps file 1');
+    assert.ok(out.includes('Generic pricing notes'), 'no-query path keeps file 2');
+    assert.ok(out.includes('Something else entirely'), 'no-query path keeps file 3');
+  });
+
+  it('is materially smaller with a query than without', () => {
+    const p = seed();
+    const full = store.buildProjectPrompt(p.id);
+    const retrieved = store.buildProjectPrompt(p.id, { query: 'clark hicks', budget: 4000 });
+    assert.ok(retrieved.length < full.length,
+      `retrieval must shrink the prompt (got ${retrieved.length} vs ${full.length})`);
+  });
+
+  it('falls back to stored order when nothing matches, rather than injecting nothing', () => {
+    const p = seed();
+    const out = store.buildProjectPrompt(p.id, { query: 'zzzzz nonexistent topic', budget: 4000 });
+    assert.ok(out && out.length > 0, 'must not return an empty prompt');
+    assert.ok(out.includes('Be concrete.'), 'instructions survive a zero-match query');
+  });
+});

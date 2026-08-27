@@ -1596,7 +1596,8 @@ GRAPHIFY (use ONLY for code/architecture tasks — not for general chat):
      */
     if (session.projectId) {
       try {
-        const projectPrompt = projectStore.buildProjectPrompt(session.projectId);
+        // Pass the user's message so knowledge is retrieved, not dumped wholesale.
+        const projectPrompt = projectStore.buildProjectPrompt(session.projectId, { query: prompt, budget: 14000 });
         if (projectPrompt) systemParts.push(projectPrompt);
         const proj = projectStore.getProject(session.projectId);
         if (proj) {
