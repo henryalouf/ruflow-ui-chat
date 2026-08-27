@@ -685,7 +685,8 @@
     });
 
     if (window.ResizeObserver) {
-      els.graphResizeObserver = new ResizeObserver(function () {
+      // window-qualified to match the guard, as with MutationObserver above.
+      els.graphResizeObserver = new window.ResizeObserver(function () {
         if (pstate.graphSim) { resizeGraphCanvas(pstate.graphSim); scheduleGraphDraw(); }
       });
       els.graphResizeObserver.observe(els.graphPanelWrap);
@@ -716,14 +717,23 @@
   // re-request the project; the indicator only flips to "Saved" once the
   // re-fetched copy actually matches what we sent.
   // ---------------------------------------------------------------------------
+  var SAVE_TIMEOUT_MS = 8000;
+
   function triggerInstructionsSave() {
     if (!pstate.els || !pstate.openProjectId) return;
     var val = pstate.els.instructions.value;
     if (val === pstate.lastConfirmedInstructions && pstate.saveState !== 'saving') return;
     pstate.lastSentInstructions = val;
     setSaveState('saving');
+    var token = ++pstate.saveToken;
     host.wsSend({ type: 'update_project', id: pstate.openProjectId, patch: { instructions: val } });
     host.wsSend({ type: 'get_project', id: pstate.openProjectId });
+    // Safety net: the WS protocol has no explicit error ack, so if the
+    // re-fetch never echoes our value back within a reasonable window, stop
+    // showing "Saving..." forever and surface it as unconfirmed instead.
+    setTimeout(function () {
+      if (pstate.saveToken === token && pstate.saveState === 'saving') setSaveState('error');
+    }, SAVE_TIMEOUT_MS);
   }
 
   function setSaveState(state) {
@@ -731,7 +741,7 @@
     if (!pstate.els) return;
     var el = pstate.els.saveIndicator;
     el.className = 'rp-save-indicator rp-save-' + state;
-    el.textContent = state === 'saving' ? 'Saving...' : (state === 'saved' ? 'Saved' : '');
+    el.textContent = state === 'saving' ? 'Saving...' : (state === 'saved' ? 'Saved' : (state === 'error' ? 'Not saved - retrying on next edit' : ''));
   }
 
   // ---------------------------------------------------------------------------
@@ -1420,6 +1430,7 @@
     if (!root) return;
     pstate.root = root;
     destroyGraphSim();
+    if (pstate.els && pstate.els.graphResizeObserver) pstate.els.graphResizeObserver.disconnect();
     pstate.openProjectId = projectId;
     pstate.projectDetail = null;
     pstate.context = null;
