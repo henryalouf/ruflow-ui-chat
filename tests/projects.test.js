@@ -580,8 +580,8 @@ describe('Projects — listProjects', () => {
 describe('Projects — buildProjectPrompt retrieval', () => {
   function seed() {
     const p = store.createProject({ name: 'Leads', description: '', instructions: 'Be concrete.' });
-    store.addKnowledge(p.id, { name: 'clark-hicks-terms.md', mime: 'text/markdown',
-      buffer: Buffer.from('Clark Hicks agreed one thousand pounds for the build.') });
+    store.addKnowledge(p.id, { name: 'vendor-contract-terms.md', mime: 'text/markdown',
+      buffer: Buffer.from('Acme Corp agreed one thousand for the build.') });
     store.addKnowledge(p.id, { name: 'unrelated-pricing.md', mime: 'text/markdown',
       buffer: Buffer.from('Generic pricing notes with no names in them at all.') });
     store.addKnowledge(p.id, { name: 'another-unrelated.md', mime: 'text/markdown',
@@ -591,9 +591,9 @@ describe('Projects — buildProjectPrompt retrieval', () => {
 
   it('inlines the matching file and lists the others by name', () => {
     const p = seed();
-    const out = store.buildProjectPrompt(p.id, { query: 'what did clark hicks agree', budget: 4000 });
+    const out = store.buildProjectPrompt(p.id, { query: 'what did acme corp agree', budget: 4000 });
 
-    assert.ok(out.includes('Clark Hicks agreed one thousand'), 'the matching file must be inlined');
+    assert.ok(out.includes('Acme Corp agreed one thousand'), 'the matching file must be inlined');
     assert.ok(out.includes('OTHER FILES IN THIS PROJECT'), 'non-matching files must still be named');
     assert.ok(out.includes('unrelated-pricing.md'), 'a skipped file must appear in the index');
     assert.ok(!out.includes('Generic pricing notes'), 'a skipped file must NOT be inlined');
@@ -603,7 +603,7 @@ describe('Projects — buildProjectPrompt retrieval', () => {
   it('still returns everything when there is no query (paired positive case)', () => {
     const p = seed();
     const out = store.buildProjectPrompt(p.id);
-    assert.ok(out.includes('Clark Hicks agreed'), 'no-query path keeps file 1');
+    assert.ok(out.includes('Acme Corp agreed'), 'no-query path keeps file 1');
     assert.ok(out.includes('Generic pricing notes'), 'no-query path keeps file 2');
     assert.ok(out.includes('Something else entirely'), 'no-query path keeps file 3');
   });
@@ -611,7 +611,7 @@ describe('Projects — buildProjectPrompt retrieval', () => {
   it('is materially smaller with a query than without', () => {
     const p = seed();
     const full = store.buildProjectPrompt(p.id);
-    const retrieved = store.buildProjectPrompt(p.id, { query: 'clark hicks', budget: 4000 });
+    const retrieved = store.buildProjectPrompt(p.id, { query: 'acme corp', budget: 4000 });
     assert.ok(retrieved.length < full.length,
       `retrieval must shrink the prompt (got ${retrieved.length} vs ${full.length})`);
   });

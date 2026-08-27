@@ -563,7 +563,7 @@ describe('toRuflow — knowledge filenames', () => {
   }).projects[0].knowledge[0];
 
   it('uses file_name (live API shape)', () => {
-    assert.equal(mk({ uuid: 'u1', file_name: 'leads/clark-hicks.md', content: '#x' }).name, 'leads/clark-hicks.md');
+    assert.equal(mk({ uuid: 'u1', file_name: 'docs/vendor-contract.md', content: '#x' }).name, 'docs/vendor-contract.md');
   });
 
   it('uses filename (export shape)', () => {
