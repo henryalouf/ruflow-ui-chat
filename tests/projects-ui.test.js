@@ -202,3 +202,62 @@ describe('projects UI — attach menu', () => {
       'closing the menu must not wipe the sidebar');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Delete confirmation must actually be modal
+//
+// It shipped with role="dialog" aria-modal="true" and none of the behaviour:
+// focus never entered it, Escape did nothing, and Tab walked into the page
+// behind it — so a keyboard-only user could not reach Cancel on a DESTRUCTIVE
+// action. aria-modal is a promise to assistive tech; these assert it is kept.
+// ---------------------------------------------------------------------------
+describe('projects UI — delete confirmation is keyboard-modal', () => {
+  function openConfirm() {
+    const ctx = boot();
+    const { RP, doc } = ctx;
+    RP.handleServerMessage({ type: 'project', project: {
+      id: 'p1', name: 'Doomed', description: '', instructions: '', color: '#D97757', knowledge: [] }, sessions: [] });
+    RP.openProjectView('p1');
+    const del = doc.querySelector('.rp-delete-btn');
+    assert.ok(del, 'sanity: the delete button must exist');
+    del.focus();
+    del.click();
+    const overlay = doc.getElementById('rp-confirm-overlay');
+    assert.ok(overlay && overlay.classList.contains('rp-open'), 'sanity: the dialog must open');
+    return { ...ctx, overlay, del };
+  }
+
+  it('moves focus to Cancel — the safe option — when it opens', () => {
+    const { doc, overlay } = openConfirm();
+    const cancel = overlay.querySelector('#rp-confirm-cancel');
+    assert.equal(doc.activeElement, cancel, 'focus must land on Cancel, not stay on the opener');
+  });
+
+  it('closes on Escape without confirming', () => {
+    const { doc, overlay } = openConfirm();
+    doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.ok(!overlay.classList.contains('rp-open'), 'Escape must close the dialog');
+  });
+
+  it('traps Tab between Cancel and Delete instead of leaking into the page', () => {
+    const { doc, overlay } = openConfirm();
+    const cancel = overlay.querySelector('#rp-confirm-cancel');
+    const ok = overlay.querySelector('#rp-confirm-ok');
+    const tab = (shift) => doc.dispatchEvent(
+      new doc.defaultView.KeyboardEvent('keydown', { key: 'Tab', shiftKey: !!shift, bubbles: true }));
+
+    assert.equal(doc.activeElement, cancel);
+    tab();
+    assert.equal(doc.activeElement, ok, 'Tab must move to Delete');
+    tab();
+    assert.equal(doc.activeElement, cancel, 'Tab must wrap back to Cancel, not escape the dialog');
+    tab(true);
+    assert.equal(doc.activeElement, ok, 'Shift+Tab must cycle backwards within the dialog');
+  });
+
+  it('returns focus to the control that opened it', () => {
+    const { doc, overlay, del } = openConfirm();
+    doc.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(doc.activeElement, del, 'focus must go back to the delete button');
+  });
+});

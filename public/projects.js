@@ -225,10 +225,53 @@
     okBtn.parentNode.replaceChild(newOk, okBtn);
     var newCancel = cancelBtn.cloneNode(true);
     cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+    /*
+     * Make it actually modal.
+     *
+     * It carried role="dialog" aria-modal="true" while behaving like nothing of
+     * the sort: focus never entered it, Escape did nothing, and Tab walked
+     * straight into the project view behind it — so a keyboard-only user could
+     * never reach Cancel on a DESTRUCTIVE action, and could interact with the
+     * page underneath. aria-modal is a promise to assistive tech; the behaviour
+     * has to match it.
+     */
+    var opener = document.activeElement;
     overlay.classList.add('rp-open');
-    function close() { overlay.classList.remove('rp-open'); }
+
+    function close() {
+      overlay.classList.remove('rp-open');
+      document.removeEventListener('keydown', onKeydown, true);
+      // Return focus where it came from, or the user is dumped at the page top.
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
+        opener.focus();
+      }
+    }
+
+    function onKeydown(e) {
+      if (!overlay.classList.contains('rp-open')) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        close();                       // Escape means cancel, never confirm.
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      // Trap: cycle between the two buttons rather than escaping to the page.
+      var focusables = [newCancel, newOk];
+      var idx = focusables.indexOf(document.activeElement);
+      e.preventDefault();
+      var next;
+      if (e.shiftKey) next = focusables[(idx <= 0 ? focusables.length : idx) - 1];
+      else next = focusables[(idx + 1) % focusables.length];
+      next.focus();
+    }
+
+    document.addEventListener('keydown', onKeydown, true);
+    // Cancel takes initial focus: the safe option, on a destructive dialog.
+    newCancel.focus();
+
     newOk.addEventListener('click', function () { close(); onConfirm(); });
     newCancel.addEventListener('click', close);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
   }
 
   // ---------------------------------------------------------------------------
