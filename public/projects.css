@@ -41,7 +41,10 @@
   --rp-text-secondary: #ABA99D;
   --rp-text-dim: #7C7A70;
   --rp-accent: #D97757;
-  --rp-accent-text: var(--rp-accent);  /* clay already clears 4.5:1 on dark surfaces */
+  /* Raw clay #D97757 on --rp-bg-card #30302E is 4.24:1 — under AA, not over it.
+     Lifted slightly toward white: 4.67:1 on the card, 5.36:1 on the page, and
+     still unmistakably the same clay. --rp-accent stays exact for fills/dots. */
+  --rp-accent-text: #DC8264;
   --rp-accent-soft: rgba(217, 119, 87, 0.16);
   --rp-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   --rp-overlay: rgba(20, 19, 17, 0.6);
@@ -69,7 +72,7 @@
   --rp-hover: #ECE9DF;
   --rp-border: rgba(61, 61, 58, 0.12);
   --rp-text-primary: #3D3D3A;
-  --rp-text-secondary: #73716A;
+  --rp-text-secondary: #706E67;  /* #73716A measured 4.40:1 on the card — just under AA */
   --rp-text-dim: #94928A;
   --rp-accent: #D97757;
   --rp-accent-text: #AD5233;  /* darkened clay: ~4.8:1 on --rp-bg-card, the raw
