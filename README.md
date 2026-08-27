@@ -61,8 +61,9 @@ each of those is and why. Then:
 npm start
 ```
 
-The server prints an unlock URL containing an access token. Open it once per
-browser; the token becomes an `HttpOnly` cookie and is stripped from the URL.
+The server prints an unlock URL. Get the token with `grep RUFLOW_TOKEN .env`
+and open `http://localhost:3001/?k=<token>` once per browser; it becomes an
+`HttpOnly` cookie and is stripped from the URL.
 
 ## Connecting your Claude subscription
 

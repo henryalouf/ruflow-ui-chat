@@ -240,8 +240,11 @@ echo "RUFLOW_TOKEN=$(openssl rand -base64 32 | tr -d /=+)" >> .env
 
 ```bash
 grep RUFLOW_TOKEN .env        # it is right there
-pm2 logs ruflow-ui            # or the unlock line from startup
 ```
+
+The server deliberately does **not** print the token at startup. `.env` is mode
+`0600`; pm2's log is `0664` and persists, so printing it would copy the secret
+into a weaker container on every restart.
 
 Rotating it is just editing `.env` and restarting — every existing cookie stops
 matching immediately.
@@ -331,7 +334,7 @@ pm2 startup          # follow the printed command
 ```
 
 ```bash
-pm2 logs ruflow-ui       # includes the unlock line
+pm2 logs ruflow-ui       # startup output (no token — see .env)
 pm2 reload ruflow-ui     # after code changes
 pm2 restart ruflow-ui
 ```

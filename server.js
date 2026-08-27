@@ -549,8 +549,8 @@ app.use((req, res, next) => {
  <h1>Ruflow is locked</h1>
  <p>Append your access token to the URL once and it will be remembered on this device:</p>
  <p><code>${req.headers.host ? 'http://' + req.headers.host : ''}/?k=YOUR_TOKEN</code></p>
- <p>The token is in <code>ruflow-ui/.env</code> as <code>RUFLOW_TOKEN</code>, or run
- <code>pm2 logs ruflow-ui</code> and look for the unlock line printed at startup.</p>
+ <p>The token is in <code>ruflow-ui/.env</code> as <code>RUFLOW_TOKEN</code>:
+ <code>grep RUFLOW_TOKEN ruflow-ui/.env</code></p>
 </main>`);
 });
 
@@ -1896,8 +1896,18 @@ server.listen(PORT, () => {
   if (OPEN_MODE) {
     console.warn('  Auth:         DISABLED (RUFLOW_OPEN=1) — only safe bound to localhost');
   } else {
-    console.log(`  Unlock:       http://<host>:${PORT}/?k=${ACCESS_TOKEN}`);
-    console.log('                token lives in ruflow-ui/.env (gitignored, mode 600)');
+    /*
+     * The token is deliberately NOT printed.
+     *
+     * .env holds it at mode 600, owner-only. stdout goes to a pm2 log at mode
+     * 664 that persists across restarts — printing it there copied the secret
+     * into a strictly weaker container on every boot (13 copies had already
+     * accumulated). Anyone who could read the log had the token without ever
+     * needing .env. Show where it lives instead of what it is.
+     */
+    console.log(`  Unlock:       http://<host>:${PORT}/?k=<RUFLOW_TOKEN>`);
+    console.log('                get it with:  grep RUFLOW_TOKEN ruflow-ui/.env');
+    console.log(`                (${ACCESS_TOKEN.length}-char token, .env is gitignored, mode 600)`);
   }
   writeHeartbeat();
   setInterval(writeHeartbeat, 60000);
