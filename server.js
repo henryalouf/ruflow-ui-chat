@@ -1143,7 +1143,11 @@ wss.on('connection', (ws) => {
         return handleAssignSession(msg);
 
       case 'project_context':
-        return handleProjectContext(msg);
+        // Async handler: the outer try/catch cannot see a rejected promise, so
+        // catch here too rather than risk an unhandled rejection.
+        return handleProjectContext(msg).catch((e) => {
+          console.error('[projects] context handler rejected:', e && e.message);
+        });
 
       case 'unarchive_session':
         return handleUnarchiveSession(msg);
@@ -1274,7 +1278,7 @@ wss.on('connection', (ws) => {
     broadcastSessionUpdate();
   }
 
-  function handleProjectContext(msg) {
+  async function handleProjectContext(msg) {
     const project = projectStore.getProject(msg.id);
     if (!project) return send({ type: 'error', message: 'Project not found' });
     /*
@@ -1282,8 +1286,14 @@ wss.on('connection', (ws) => {
      * broken context read take the socket down — the panel degrades to empty.
      */
     try {
-      const ctx = contextEngine.projectContext(project, { recentText: msg.query || '' });
-      send({ type: 'project_context', id: msg.id, memory: ctx.memory, graph: ctx.graph, brain: ctx.brain });
+      // Await, so one client's panel load does not freeze every other client.
+      const ctx = await contextEngine.projectContextAsync(project, { recentText: msg.query || '' });
+      send({
+        type: 'project_context', id: msg.id,
+        memory: ctx.memory, graph: ctx.graph, brain: ctx.brain,
+        // Surfaced so a broken subsystem is distinguishable from "no matches".
+        memoryError: ctx.memoryError || null, graphError: ctx.graphError || null,
+      });
     } catch (e) {
       console.warn('[projects] context failed:', e.message);
       send({ type: 'project_context', id: msg.id, memory: [], graph: { nodes: [], edges: [], stats: {} }, brain: [], error: e.message });

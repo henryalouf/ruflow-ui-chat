@@ -144,8 +144,11 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 220px;
+  /* 220px clipped the 6th row with no visible affordance. Scale with the
+     viewport so a normal project count fits, and still scroll past that. */
+  max-height: min(38vh, 420px);
   overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .rp-empty {
@@ -491,7 +494,14 @@
 
 .rp-instructions {
   width: 100%;
-  min-height: 110px;
+  /*
+   * 110px showed roughly 3% of a real 9,951-char instructions field, with the
+   * native resize grabber as the only hint there was more. Give it room, let it
+   * grow with the panel, and keep it obviously scrollable.
+   */
+  min-height: 220px;
+  max-height: 46vh;
+  overflow-y: auto;
   resize: vertical;
   background: var(--rp-bg-input);
   border: 1px solid var(--rp-border);

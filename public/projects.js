@@ -149,6 +149,20 @@
    * never drive an inline render, which means we cannot just navigate to it —
    * that would download. Fetch the bytes and paint them into a dialog instead.
    */
+  /*
+   * Size the instructions box to its content, up to the CSS max-height.
+   * A fixed 110px box showed ~3% of a real 9,951-char field, and the only clue
+   * there was more was the native resize grabber. Past the cap it scrolls.
+   */
+  function autoGrowInstructions() {
+    var ta = pstate.els && pstate.els.instructions;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    var max = parseInt(window.getComputedStyle(ta).maxHeight, 10);
+    var target = ta.scrollHeight + 2;
+    ta.style.height = (isFinite(max) && max > 0 ? Math.min(target, max) : target) + 'px';
+  }
+
   function viewKnowledgeFile(fileId, fileName) {
     var pid = pstate.openProjectId;
     if (!pid) return;
@@ -441,6 +455,8 @@
 
     var name = document.createElement('span');
     name.className = 'rp-project-name';
+    // Ellipsised in a 280px sidebar — without this the full name is unreadable.
+    name.title = p.name || 'Untitled project';
     name.textContent = p.name || 'Untitled project';
     row.appendChild(name);
 
@@ -746,6 +762,7 @@
 
     // --- Instructions autosave ---
     els.instructions.addEventListener('input', function () {
+      autoGrowInstructions();
       clearTimeout(pstate.saveTimer);
       pstate.saveTimer = setTimeout(triggerInstructionsSave, SAVE_DEBOUNCE_MS);
     });
@@ -1530,6 +1547,7 @@
       // push will match. Leave the indicator on "saving".
     } else if (document.activeElement !== pstate.els.instructions) {
       pstate.els.instructions.value = p.instructions || '';
+      autoGrowInstructions();
       pstate.lastConfirmedInstructions = p.instructions || '';
     } else {
       pstate.lastConfirmedInstructions = p.instructions || '';
