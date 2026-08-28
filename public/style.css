@@ -2372,3 +2372,34 @@ mark.search-highlight.current{background:#ff6b35;outline:2px solid #ff6b35;}
   cursor: pointer;
   display: block;
 }
+
+/* ---------------------------------------------------------------------------
+ * Markdown tables in assistant replies
+ *
+ * The renderer produced structurally correct <table><thead>, but nothing styled
+ * it, so a table read as run-together plain text — the data was right and the
+ * shape was invisible.
+ * ------------------------------------------------------------------------- */
+.message-text table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  width: auto;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;      /* a wide table scrolls itself rather than the page */
+  font-size: 13px;
+}
+.message-text th,
+.message-text td {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.message-text th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+.message-text tbody tr:nth-child(even) td {
+  background: rgba(127, 127, 127, 0.05);
+}

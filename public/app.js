@@ -227,18 +227,51 @@
     if (ia) ia.hidden = false;
   }
 
+  /** Show a notice once per reason, so a reconnect storm cannot spam it. */
+  var _toastedReasons = {};
+  function showToastOnce(reason, message) {
+    if (_toastedReasons[reason]) return;
+    _toastedReasons[reason] = true;
+    setTimeout(function () { delete _toastedReasons[reason]; }, 10000);
+    if (typeof showNotification === 'function') showNotification(message, 'info');
+    else console.info('[ruflow]', message);
+  }
+
   function connectWebSocket() {
     var WS_URL = 'ws://' + window.location.host;
     var ws = new WebSocket(WS_URL);
     state.ws = ws;
 
     ws.onopen = function () {
+      var wasStreaming = state.isStreaming;
+      var streamingSessionId = state.currentSessionId;
       state.reconnectAttempts = 0;
       showReconnectBanner('connected');
       updateConnectionStatus(true);
       ws.send(JSON.stringify({ type: 'list_sessions' }));
       ws.send(JSON.stringify({ type: 'list_projects' }));
       initProjects();
+
+      /*
+       * Resolve a run that was in flight when the socket dropped.
+       *
+       * The server SIGTERMs the CLI on ws close and persists whatever was
+       * generated, so the data is safe — but this tab never hears stream_end.
+       * It kept the Stop button lit and the elapsed timer ticking forever,
+       * frozen on the partial answer, indefinitely telling the user a turn was
+       * still running that had finished minutes earlier. Reloading the session
+       * replaces the partial view with what is actually on disk.
+       */
+      if (wasStreaming) {
+        state.isStreaming = false;
+        hideCancelButton();
+        state.currentRunView = null;
+        if (streamingSessionId) {
+          ws.send(JSON.stringify({ type: 'load_session', sessionId: streamingSessionId }));
+          showToastOnce('reconnect-truncated',
+            'Reconnected. That reply was cut short when the connection dropped — showing what was saved.');
+        }
+      }
     };
 
     ws.onclose = function () {
