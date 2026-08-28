@@ -2948,19 +2948,101 @@
   // ---------------------------------------------------------------------------
   // Feature #22: Inline image preview
   // ---------------------------------------------------------------------------
+  /*
+   * Turn bare image URLs in assistant prose into inline previews.
+   *
+   * This previously read `.message-text`'s innerHTML back out AFTER DOMPurify
+   * had sanitised it, string-replaced inside it, and reassigned innerHTML with
+   * no second sanitise. Three problems, in ascending order of seriousness:
+   *
+   *   - the replacement template embedded an inline `onerror=` handler, i.e. it
+   *     re-inserted exactly the kind of attribute the sanitiser had just
+   *     stripped, straight back into the trusted output;
+   *   - re-parsing sanitiser output is the documented mutation-XSS foot-gun,
+   *     because the browser can reparse a serialised string differently than
+   *     the tree it came from;
+   *   - the regex matched URLs anywhere in the markup, including inside href
+   *     and src attributes of links the renderer had already built correctly.
+   *
+   * Walking text nodes avoids all three: nothing is serialised, nothing is
+   * reparsed, attributes are never touched, and elements are built with DOM
+   * APIs so no markup is ever interpreted from a string.
+   */
+  var INLINE_IMAGE_RE = /(https?:\/\/[^\s<>"']+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>"']*)?)/i;
+
   function enhanceInlineImages(el) {
     if (!el) return;
     var textEl = el.querySelector('.message-text');
     if (!textEl) return;
-    var html = textEl.innerHTML;
-    // Match URLs ending with image extensions
-    var imgRegex = /(https?:\/\/[^\s<>"]+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>"]*)?)/gi;
-    if (imgRegex.test(html)) {
-      textEl.innerHTML = html.replace(imgRegex, function (url) {
-        return '<a href="' + url + '" target="_blank"><img src="' + url + '" alt="inline image" style="max-width:100%;max-height:300px;border-radius:6px;margin:4px 0;cursor:pointer;" onerror="this.style.display=\'none\'" /></a>';
-      });
+
+    /*
+     * Autolinks first. The markdown renderer turns a bare URL into <a href=X>X</a>,
+     * so by the time we see it the URL lives inside an anchor. Upgrade that
+     * anchor in place — keep the link, put an image inside it — rather than
+     * skipping it, which would silently drop the whole feature.
+     */
+    var anchors = textEl.querySelectorAll('a[href]');
+    for (var a = 0; a < anchors.length; a++) {
+      var anchor = anchors[a];
+      var href = anchor.getAttribute('href') || '';
+      if (!INLINE_IMAGE_RE.test(href) || !/^https?:\/\//i.test(href)) continue;
+      if (anchor.querySelector('img')) continue;                 // already upgraded
+      if ((anchor.textContent || '').trim() !== href.trim()) continue;  // a titled link, leave it
+      if (anchor.closest('code, pre')) continue;
+      anchor.textContent = '';
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      var autoImg = document.createElement('img');
+      autoImg.className = 'inline-image';
+      autoImg.src = href;
+      autoImg.alt = 'inline image';
+      autoImg.addEventListener('error', function () { this.style.display = 'none'; });
+      anchor.appendChild(autoImg);
+    }
+
+    // Collect first: replacing nodes while walking invalidates the walker.
+    var walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, null);
+    var targets = [];
+    var node;
+    while ((node = walker.nextNode())) {
+      // Never inside an existing link (already handled), and never inside code
+      // or pre — a URL in a code sample is content, not something to render.
+      if (node.parentElement && node.parentElement.closest('a, code, pre')) continue;
+      if (INLINE_IMAGE_RE.test(node.nodeValue || '')) targets.push(node);
+    }
+
+    for (var t = 0; t < targets.length; t++) {
+      var textNode = targets[t];
+      var parts = (textNode.nodeValue || '').split(
+        new RegExp(INLINE_IMAGE_RE.source, 'gi')
+      );
+      if (parts.length < 2) continue;
+
+      var frag = document.createDocumentFragment();
+      for (var i = 0; i < parts.length; i++) {
+        var piece = parts[i];
+        if (!piece) continue;
+        if (INLINE_IMAGE_RE.test(piece) && /^https?:\/\//i.test(piece)) {
+          var link = document.createElement('a');
+          link.href = piece;              // href, not markup — nothing is parsed
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          var img = document.createElement('img');
+          img.className = 'inline-image';
+          img.src = piece;
+          img.alt = 'inline image';
+          // A listener, not an inline onerror attribute.
+          img.addEventListener('error', function () { this.style.display = 'none'; });
+          link.appendChild(img);
+          frag.appendChild(link);
+        } else {
+          frag.appendChild(document.createTextNode(piece));
+        }
+      }
+      textNode.parentNode.replaceChild(frag, textNode);
     }
   }
+
 
   // ---------------------------------------------------------------------------
   // Feature #15: Double-click to edit session name in sidebar

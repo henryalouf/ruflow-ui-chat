@@ -575,3 +575,47 @@ describe('toRuflow — knowledge filenames', () => {
     assert.equal(mk({ uuid: 'u3', content: '#x' }).name, 'u3');
   });
 });
+
+// ---------------------------------------------------------------------------
+// A doc renamed on claude.ai should be renamed here, not left stale
+//
+// Dedupe keys on the doc uuid, which correctly avoided duplicating a renamed
+// file — but the stored name was never updated, so the UI kept showing the old
+// filename indefinitely. Correct data, stale label, and nothing to tell you which.
+// ---------------------------------------------------------------------------
+describe('importAll — knowledge renames', () => {
+  const payload = (fileName) => ({
+    projects: [{
+      uuid: 'p-rename', name: 'Renamer', description: '', prompt_template: 'x',
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+      docs: [{ uuid: 'doc-stable', file_name: fileName, content: 'body' }],
+    }],
+    conversations: [], warnings: [],
+  });
+
+  it('updates the stored filename without duplicating the file', () => {
+    const { store, sessionsDir } = tempStore();
+    importAll(payload('old-name.md'), { projectStore: store, sessionsDir, dryRun: false });
+    const p = store.listProjects({})[0];
+    assert.deepEqual(store.getProject(p.id).knowledge.map(k => k.name), ['old-name.md'],
+      'sanity: the first import stores the original name');
+
+    importAll(payload('new-name.md'), { projectStore: store, sessionsDir, dryRun: false });
+    const after = store.getProject(p.id).knowledge;
+    assert.equal(after.length, 1, 'a rename must not duplicate the file');
+    assert.equal(after[0].name, 'new-name.md', 'the stored name must follow the rename');
+    assert.equal(after[0].sourceId, 'doc-stable', 'identity is the doc uuid, not the name');
+  });
+
+  it('leaves an unchanged filename alone (paired positive case)', () => {
+    const { store, sessionsDir } = tempStore();
+    importAll(payload('steady.md'), { projectStore: store, sessionsDir, dryRun: false });
+    const p = store.listProjects({})[0];
+    const before = store.getProject(p.id).knowledge[0].id;
+    importAll(payload('steady.md'), { projectStore: store, sessionsDir, dryRun: false });
+    const after = store.getProject(p.id).knowledge;
+    assert.equal(after.length, 1);
+    assert.equal(after[0].name, 'steady.md');
+    assert.equal(after[0].id, before, 're-importing an unchanged doc must not recreate it');
+  });
+});
