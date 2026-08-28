@@ -666,3 +666,48 @@ describe('getFullToolOutput', () => {
     assert.strictEqual(processor.getFullToolOutput('nope'), null);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A finished turn must append to the session's CURRENT state
+//
+// handleChat loads the session once and holds that object for the whole
+// streamed reply. Two turns on the same session each mutated their own stale
+// snapshot, and whichever saved last silently dropped the other's messages — a
+// lost update, which temp+rename does nothing to prevent.
+// ---------------------------------------------------------------------------
+describe('persistTurn — concurrent turns do not clobber each other', () => {
+  it('appends through appendSessionMessages rather than the held snapshot', () => {
+    const appends = [];
+    const h = makeHarness({
+      appendSessionMessages: (id, msgs) => {
+        appends.push({ id, msgs });
+        // Simulate a concurrent turn having landed during this stream.
+        return { id, messages: [{ role: 'user', content: 'earlier turn' }].concat(msgs) };
+      },
+    });
+    h.processor.processStreamEvent(textDelta('the answer'));
+    h.processor.processStreamEvent(assistantText('the answer'));
+    h.processor.finalizeIfUnsaved();
+
+    assert.strictEqual(appends.length, 1, 'the turn must persist via the fresh-read append');
+    assert.strictEqual(appends[0].id, 'sess-1');
+    assert.strictEqual(appends[0].msgs.length, 2, 'a user and an assistant message');
+    assert.strictEqual(appends[0].msgs[0].role, 'user');
+    assert.strictEqual(appends[0].msgs[1].role, 'assistant');
+    assert.match(appends[0].msgs[1].content, /the answer/);
+    // A turn that landed mid-stream must survive into the in-memory copy.
+    assert.strictEqual(h.session.messages[0].content, 'earlier turn',
+      'a concurrently-added message must not be dropped');
+    assert.strictEqual(h.session.messages.length, 3);
+  });
+
+  it('falls back to the snapshot path when no appender is injected', () => {
+    // Paired positive case: the older call shape must keep working.
+    const h = makeHarness();
+    h.processor.processStreamEvent(textDelta('legacy answer'));
+    h.processor.processStreamEvent(assistantText('legacy answer'));
+    h.processor.finalizeIfUnsaved();
+    assert.ok(h.saved.length >= 1, 'the fallback must still save');
+    assert.strictEqual(h.session.messages.length, 2, 'and still record both messages');
+  });
+});

@@ -813,6 +813,31 @@ function loadSession(id) {
  * lost. Write to a per-writer temp and rename, which is atomic on the same
  * filesystem, so a reader sees either the old file or the new one.
  */
+/**
+ * Append messages to a session using its CURRENT on-disk state.
+ *
+ * handleChat loads the session once and holds that object for the whole
+ * streamed reply — often tens of seconds. Two turns on the same session (two
+ * tabs, or a resend while the first is still running) each mutate their own
+ * stale snapshot, and whichever saves last silently drops the other's messages.
+ * That is a lost update, not a torn write, and temp+rename does nothing for it.
+ * Re-reading immediately before appending closes the window to the few
+ * microseconds inside this function, which Node's single event loop makes
+ * atomic in practice.
+ */
+function appendSessionMessages(sessionId, newMessages, patch) {
+  const fresh = loadSession(sessionId);
+  if (!fresh) return null;
+  fresh.messages = (fresh.messages || []).concat(newMessages || []);
+  if (patch && typeof patch === 'object') {
+    for (const k of Object.keys(patch)) {
+      if (k !== 'id' && k !== 'messages' && k !== 'createdAt') fresh[k] = patch[k];
+    }
+  }
+  saveSession(fresh);
+  return fresh;
+}
+
 function saveSession(session) {
   session.updatedAt = new Date().toISOString();
   const target = sessionPath(session.id);
@@ -1851,6 +1876,7 @@ GRAPHIFY (use ONLY for code/architecture tasks — not for general chat):
       userText,
       model,
       saveSession,
+      appendSessionMessages,
       autoExtractMemory,
       syncSessionToVectorDb,
       broadcastSessionUpdate,
