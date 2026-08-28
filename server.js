@@ -595,6 +595,17 @@ function handleUpload(req, res) {
       return res.status(400).json({ error: `Document exceeds the ${Math.round(DOC_MAX_SIZE / (1024 * 1024))}MB limit` });
     }
 
+    /*
+     * IMAGE_MAX_SIZE was declared and only ever used to compute multer's
+     * ceiling, so images were bounded by the 50MB document cap instead of the
+     * 10MB one the constant advertises. An unenforced limit is worse than no
+     * limit: the number reads as a guarantee.
+     */
+    if (isImage && req.file.size > IMAGE_MAX_SIZE) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: `Image exceeds the ${Math.round(IMAGE_MAX_SIZE / (1024 * 1024))}MB limit` });
+    }
+
     const storedName = `${uuidv4()}-${safeName}`;
     const storedPath = path.join(UPLOADS_DIR, storedName);
     fs.renameSync(req.file.path, storedPath);

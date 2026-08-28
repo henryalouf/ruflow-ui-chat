@@ -459,7 +459,10 @@
       var name = input.value.trim();
       if (!name) { cancel(); return; }
       pstate.pendingCreate = true;
-      host.wsSend({ type: 'create_project', name: name, description: '', instructions: '' });
+      sendMutation(
+        { type: 'create_project', name: name, description: '', instructions: '' },
+        'Project not created — you appear to be disconnected.'
+      );
       pstate.creating = false;
       renderSidebarSection(containerEl);
     }
@@ -559,7 +562,10 @@
       t.textContent = label;
       item.appendChild(t);
       item.addEventListener('click', function () {
-        host.wsSend({ type: 'assign_session', sessionId: sessionId, projectId: projectId });
+        sendMutation(
+          { type: 'assign_session', sessionId: sessionId, projectId: projectId },
+          'Could not move this chat — you appear to be disconnected.'
+        );
         closeAttachMenu();
       });
       menu.appendChild(item);
@@ -814,7 +820,10 @@
         'This deletes "' + name + '" and its knowledge files. Chats stay, but are detached from the project.',
         'Delete',
         function () {
-          host.wsSend({ type: 'delete_project', id: pstate.openProjectId });
+          sendMutation(
+            { type: 'delete_project', id: pstate.openProjectId },
+            'Project not deleted — you appear to be disconnected.'
+          );
         }
       );
     }, SHELL_SIG);
@@ -885,9 +894,32 @@
     }
   }
 
+  /**
+   * Send a mutation and tell the user if it did not go out.
+   *
+   * host.wsSend returns false when the socket is not OPEN. Every mutation here
+   * used to ignore that and update the DOM optimistically, so renaming a
+   * project or picking a colour while disconnected showed the new value and
+   * silently dropped the change — the same shape as the lost chat turn, just
+   * with smaller stakes. Refresh reads stay silent; only mutations warn.
+   */
+  function sendMutation(msg, failureText) {
+    var ok = host.wsSend(msg);
+    if (!ok) notify(failureText || 'Not saved — you appear to be disconnected.', 'error');
+    return ok;
+  }
+
   function patchProject(patch) {
     if (!pstate.openProjectId) return;
-    host.wsSend({ type: 'update_project', id: pstate.openProjectId, patch: patch });
+    var ok = sendMutation(
+      { type: 'update_project', id: pstate.openProjectId, patch: patch },
+      'Change not saved — you appear to be disconnected.'
+    );
+    if (!ok) {
+      // The optimistic DOM update is now a lie; pull the real state back.
+      host.wsSend({ type: 'get_project', id: pstate.openProjectId });
+      return;
+    }
     refreshProjectList();
   }
   function refreshProjectList() {
@@ -1760,6 +1792,16 @@
         scheduleGraphDraw();
       }
     }, 150);
+  });
+
+  /*
+   * Pause the graph simulation when the tab is hidden. Browsers throttle
+   * background rAF to about 1fps, so this was never a CPU emergency, but a
+   * settled sim should not be woken at all by a tab nobody is looking at.
+   */
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && pstate.graphSim) stopGraphLoop(pstate.graphSim);
+    else if (!document.hidden && pstate.graphSim && pstate.contextTab === 'graph') scheduleGraphDraw();
   });
 
   if (window.MutationObserver) {
