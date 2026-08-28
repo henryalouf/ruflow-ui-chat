@@ -1635,7 +1635,7 @@ wss.on('connection', (ws) => {
      */
     let historyPrompt = null;
     if (!session.cliSessionId && (session.messages || []).length > 0) {
-      historyPrompt = buildHistoryPrompt(session.messages, { budget: 24000 });
+      historyPrompt = buildHistoryPrompt(session.messages, { budget: 24000, livePrompt: prompt });
     }
 
     // Add system prompt with professional standards and skill routing

@@ -326,7 +326,14 @@
 
     newOk.addEventListener('click', function () { close(); onConfirm(); });
     newCancel.addEventListener('click', close);
-    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    /*
+     * The overlay element is reused across every call, so binding here added a
+     * backdrop listener per invocation that was never removed. The buttons are
+     * cloned to shed their old listeners; this one had nothing shedding it.
+     */
+    if (overlay._rpBackdrop) overlay.removeEventListener('click', overlay._rpBackdrop);
+    overlay._rpBackdrop = function (e) { if (e.target === overlay) close(); };
+    overlay.addEventListener('click', overlay._rpBackdrop);
   }
 
   // ---------------------------------------------------------------------------

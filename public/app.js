@@ -23,6 +23,14 @@
       return v === null || v === undefined ? fallback : v;
     } catch (e) { return fallback; }
   }
+  /*
+   * setItem throws too — a full quota, or the same privacy modes that make
+   * getItem throw. A preference failing to persist must never break a feature.
+   */
+  function lsSet(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
+  }
+
   function lsJson(key, fallback) {
     try {
       var raw = localStorage.getItem(key);
@@ -1398,7 +1406,7 @@
       if (text.startsWith('/think')) {
         var level = text.split(' ')[1] || 'medium';
         state.thinkingLevel = level;
-        localStorage.setItem('ruflow-think-level', level);
+        lsSet('ruflow-think-level', level);
         showNotification('Thinking level set to: ' + level, 'info');
         textarea.value = '';
         autoResizeTextarea();
@@ -1406,7 +1414,7 @@
       }
       if (text === '/tts') {
         state.ttsEnabled = !state.ttsEnabled;
-        localStorage.setItem('ruflow-tts', state.ttsEnabled ? 'on' : 'off');
+        lsSet('ruflow-tts', state.ttsEnabled ? 'on' : 'off');
         showNotification('Text-to-speech: ' + (state.ttsEnabled ? 'ON' : 'OFF'), 'info');
         textarea.value = '';
         autoResizeTextarea();
@@ -1505,7 +1513,7 @@
       }
       if (text === '/verbose') {
         state.verbose = !state.verbose;
-        localStorage.setItem('ruflow-verbose', state.verbose ? 'true' : 'false');
+        lsSet('ruflow-verbose', state.verbose ? 'true' : 'false');
         showNotification('Verbose mode ' + (state.verbose ? 'enabled' : 'disabled'), 'info');
         textarea.value = '';
         autoResizeTextarea();
@@ -2181,7 +2189,7 @@
       sortSelect.value = state.sessionSortMode;
       sortSelect.addEventListener('change', function () {
         state.sessionSortMode = sortSelect.value;
-        localStorage.setItem('ruflow-session-sort', sortSelect.value);
+        lsSet('ruflow-session-sort', sortSelect.value);
         renderSessionList();
       });
       sessionSearch.parentNode.insertBefore(sortSelect, sessionSearch.nextSibling);
@@ -2194,7 +2202,7 @@
   // Feature #13: Dark/Light theme toggle
   // ---------------------------------------------------------------------------
   function initTheme() {
-    var saved = localStorage.getItem('ruflow-theme') || 'dark';
+    var saved = lsGet('ruflow-theme', null) || 'dark';
     if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
     updateThemeIcon();
   }
@@ -2204,7 +2212,7 @@
     var next = current === 'light' ? 'dark' : 'light';
     if (next === 'light') document.documentElement.setAttribute('data-theme', 'light');
     else document.documentElement.removeAttribute('data-theme');
-    localStorage.setItem('ruflow-theme', next);
+    lsSet('ruflow-theme', next);
     updateThemeIcon();
     // Swap hljs theme — vendored + pinned now (U7-MARKDOWN), not the CDN
     // paths this used to hardcode; see highlight-wire.js's header.
@@ -2228,7 +2236,7 @@
   // ---------------------------------------------------------------------------
   // Feature #14: Notification sound
   // ---------------------------------------------------------------------------
-  var notifSoundEnabled = localStorage.getItem('ruflow-sound') !== 'off';
+  var notifSoundEnabled = lsGet('ruflow-sound', null) !== 'off';
 
   // Flash browser tab title when task completes
   var originalTitle = document.title;
@@ -2415,7 +2423,7 @@
       case '/system':
         if (args) {
           state.systemPrompts[state.currentSessionId || '_default'] = args;
-          localStorage.setItem('ruflow-system-prompts', JSON.stringify(state.systemPrompts));
+          lsSet('ruflow-system-prompts', JSON.stringify(state.systemPrompts));
           showNotification('System prompt set', 'info');
         } else { toggleSystemPromptPanel(); }
         break;
@@ -2573,7 +2581,7 @@
     var idx = state.pinnedSessions.indexOf(sessionId);
     if (idx === -1) { state.pinnedSessions.push(sessionId); showNotification('Session pinned', 'info'); }
     else { state.pinnedSessions.splice(idx, 1); showNotification('Session unpinned', 'info'); }
-    localStorage.setItem('ruflow-pinned-sessions', JSON.stringify(state.pinnedSessions));
+    lsSet('ruflow-pinned-sessions', JSON.stringify(state.pinnedSessions));
     renderSessionList();
   }
 
@@ -2766,7 +2774,7 @@
       ta.addEventListener('input', function () {
         var key = state.currentSessionId || '_default';
         state.systemPrompts[key] = ta.value;
-        localStorage.setItem('ruflow-system-prompts', JSON.stringify(state.systemPrompts));
+        lsSet('ruflow-system-prompts', JSON.stringify(state.systemPrompts));
       });
     }
     // Add brain icon button
@@ -2901,7 +2909,7 @@
 
   function adjustZoom(delta) {
     state.chatZoom = Math.max(60, Math.min(150, state.chatZoom + delta));
-    localStorage.setItem('ruflow-chat-zoom', String(state.chatZoom));
+    lsSet('ruflow-chat-zoom', String(state.chatZoom));
     applyZoom();
   }
 

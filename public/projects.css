@@ -41,7 +41,9 @@
   --rp-text-secondary: #ABA99D;
   /* Measured 3.07:1 on the card at #7C7A70 — under AA. These are hints and
      placeholders that carry real meaning, so they have to clear 4.5:1. */
-  --rp-text-dim: #99978F;
+  /* Checked against EVERY surface this can land on, not just the card:
+     4.26:1 on chip and 3.95:1 on hover were still failing. */
+  --rp-text-dim: #A5A39C;
   --rp-accent: #D97757;
   /* Raw clay #D97757 on --rp-bg-card #30302E is 4.24:1 — under AA, not over it.
      Lifted slightly toward white: 4.67:1 on the card, 5.36:1 on the page, and
@@ -78,7 +80,7 @@
   --rp-border: rgba(61, 61, 58, 0.12);
   --rp-text-primary: #3D3D3A;
   --rp-text-secondary: #706E67;  /* #73716A measured 4.40:1 on the card — just under AA */
-  --rp-text-dim: #706F69;   /* #94928A measured 2.81:1 on the light card */
+  --rp-text-dim: #696863;   /* clears 4.5:1 on card, page, chip AND hover */
   --rp-accent: #D97757;
   --rp-accent-text: #AD5233;
   /* Focus ring needs 3:1 as a non-text indicator. Raw clay measured 2.96/2.81/

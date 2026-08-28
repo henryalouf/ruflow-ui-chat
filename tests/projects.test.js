@@ -416,13 +416,24 @@ describe('Projects — buildProjectPrompt', () => {
       });
     }
     const prompt = store.buildProjectPrompt(project.id);
-    assert.ok(prompt.includes('[truncated]'), 'truncation marker present when total exceeds the cap');
 
-    // The knowledge section itself should not exceed the total budget by much
-    // (header lines add some overhead, but the actual content is capped).
-    const knowledgeSectionIdx = prompt.indexOf('--- PROJECT KNOWLEDGE ---');
-    const knowledgeSection = prompt.slice(knowledgeSectionIdx);
-    assert.ok(knowledgeSection.length < 62000, 'knowledge section stays near the 60000 char total budget');
+    // Truncation must be DISCLOSED, by whichever mechanism trims it: a clipped
+    // file, the named list of files left out, or the final budget clamp.
+    assert.ok(
+      /\[truncated\]|OTHER FILES IN THIS PROJECT|truncated to fit the budget/.test(prompt),
+      'the prompt must say it was trimmed, not trim silently'
+    );
+
+    /*
+     * The whole prompt is bounded, not just the knowledge section. The old
+     * assertion looked for a header string that no longer exists, so indexOf
+     * returned -1, slice(-1) took the final character, and "length < 62000" was
+     * true for any input — it could not fail.
+     */
+    assert.ok(prompt.length <= 60000,
+      `whole prompt must respect the default cap (got ${prompt.length})`);
+    assert.ok(prompt.includes('--- PROJECT KNOWLEDGE'),
+      'sanity: the knowledge section must actually be present');
   });
 });
 
